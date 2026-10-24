@@ -1,0 +1,16 @@
+.DS_Store
+build/
+dist/
+DerivedData/
+*.xcodeproj/
+*.xcworkspace/
+.swiftpm/
+*.xcuserstate
+.env
+*.p12
+*.mobileprovision
+*.key
+Recordings/
+*.m4a
+*.mp3
+*.wav
