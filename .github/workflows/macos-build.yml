@@ -1,0 +1,46 @@
+name: macOS application build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check source
+        run: |
+          test -f project.yml || { echo "Missing project.yml"; exit 1; }
+          test -f Sculptor/SpeechSculptorApp.swift || { echo "Missing Swift sources"; exit 1; }
+          python3 scripts/check_source.py
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: xcodegen generate --spec project.yml
+      - name: Build macOS app
+        shell: bash
+        run: |
+          set -euo pipefail
+          xcodebuild -project SpeechSculptor.xcodeproj -scheme SpeechSculptor -configuration Release -sdk macosx -destination 'generic/platform=macOS' -derivedDataPath build CODE_SIGNING_ALLOWED=NO ONLY_ACTIVE_ARCH=NO ARCHS='arm64 x86_64' build 2>&1 | tee build-output.log
+      - name: Package application
+        run: |
+          mkdir -p dist
+          test -d build/Build/Products/Release/SpeechSculptor.app
+          ditto -c -k --keepParent build/Build/Products/Release/SpeechSculptor.app dist/SpeechSculptor-macOS-development.zip
+          shasum -a 256 dist/SpeechSculptor-macOS-development.zip > dist/SHA256SUMS.txt
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeechSculptor-macOS-development
+          path: dist/
+      - name: Upload diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: SpeechSculptor-build-log
+          path: build-output.log
+          if-no-files-found: ignore
