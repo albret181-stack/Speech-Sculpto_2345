@@ -21,9 +21,11 @@ struct AudioPipelineRegression {
             fflush(stdout)
             defer { try? FileManager.default.removeItem(at: prepared) }
 
+            print("OPEN PREPARED \(prepared.path)")
+            fflush(stdout)
             let audio: AVAudioFile
             do { audio = try AVAudioFile(forReading: prepared) }
-            catch { print("FAILED OPEN CAF \(source.lastPathComponent): \(error)"); throw error }
+            catch { print("FAILED OPEN CAF \(source.lastPathComponent): \(error)"); fflush(stdout); throw error }
             guard audio.length > 0 else { fatalError("Decoded file empty: \(path)") }
             guard abs(audio.processingFormat.sampleRate - 16000) < 1 else {
                 fatalError("Sample rate not normalized: \(path)")
@@ -31,8 +33,13 @@ struct AudioPipelineRegression {
             guard audio.processingFormat.channelCount == 1 else {
                 fatalError("Not mono: \(path)")
             }
+            print("OPEN OK format \(audio.processingFormat)")
+            fflush(stdout)
             let buffer = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: 4096)!
-            try audio.read(into: buffer)
+            do { try audio.read(into: buffer) }
+            catch { print("FAILED PCM READ \(source.lastPathComponent): \(error)"); fflush(stdout); throw error }
+            print("PCM READ OK")
+            fflush(stdout)
             guard buffer.frameLength > 0, buffer.floatChannelData != nil else {
                 fatalError("Cannot read float samples: \(path)")
             }
