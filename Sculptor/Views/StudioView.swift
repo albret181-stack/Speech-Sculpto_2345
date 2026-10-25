@@ -32,12 +32,14 @@ private enum StudioPage: String, CaseIterable {
     case analysis = "Разбор"
     case training = "Практика"
     case history = "История"
+    case vocabulary = "Словарь"
     var symbol: String {
         switch self {
         case .home: "square.grid.2x2"
         case .analysis: "waveform.path.ecg"
         case .training: "sparkle.magnifyingglass"
         case .history: "clock.arrow.circlepath"
+        case .vocabulary: "character.book.closed"
         }
     }
 }
@@ -45,6 +47,7 @@ private enum StudioPage: String, CaseIterable {
 struct StudioView: View {
     @EnvironmentObject private var studio: StudioController
     @EnvironmentObject private var updates: UpdateManager
+    @EnvironmentObject private var vocabulary: VocabularyStore
     @AppStorage("allowAppleCloud") private var allowAppleCloud = false
     @AppStorage("aiProvider") private var providerRaw = AIProvider.none.rawValue
     @AppStorage("aiModel") private var selectedModel = "qwen3:4b"
@@ -68,6 +71,7 @@ struct StudioView: View {
                     case .analysis: analysis
                     case .training: training
                     case .history: history
+                    case .vocabulary: VocabularyStudio().environmentObject(vocabulary)
                     }
                 }
                 .padding(.horizontal, 30)
@@ -234,6 +238,7 @@ struct StudioView: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 VStack(alignment: .leading, spacing: 17) {
                     progressPanel
+                    wordOfDayPanel
                     practiceSpotlight
                 }
                 .frame(width: 300)
@@ -297,6 +302,35 @@ struct StudioView: View {
                 .font(.system(size: 10)).foregroundStyle(Design.subtle).fixedSize(horizontal: false, vertical: true)
         }
         .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
+    }
+
+    private var wordOfDayPanel: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            HStack {
+                Label("Слово дня", systemImage: "character.book.closed")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Design.acid)
+                Spacer()
+                Text("Ежедневно").font(.system(size: 10)).foregroundStyle(Design.subtle)
+            }
+            HStack(spacing: 12) {
+                Image(systemName: vocabulary.dailyWord.symbol)
+                    .font(.system(size: 26))
+                    .frame(width: 53, height: 53)
+                    .foregroundStyle(Design.acid)
+                    .background(Design.mutedBlue, in: RoundedRectangle(cornerRadius: 12))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(vocabulary.dailyWord.term).font(.system(size: 19, weight: .semibold)).foregroundStyle(Design.main)
+                    Text(vocabulary.dailyWord.meaning).font(.system(size: 11)).foregroundStyle(Design.subtle).lineLimit(3)
+                }
+            }
+            Button("Значение, примеры и практика") { page = .vocabulary }
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(Design.acid)
+                .buttonStyle(.plain)
+        }
+        .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
     }
@@ -466,6 +500,7 @@ struct StudioView: View {
                 metric("ИНТОНАЦИЯ", report.metrics.pitchRangeSemitones.map { String(format: "%.1f", $0) } ?? "—", "полутона · диапазон")
             }
             sectionTitle("ОСНОВНЫЕ ЗАМЕЧАНИЯ")
+            if !report.fillerBreakdown.isEmpty { fillerSuggestions(report: report) }
             ForEach(report.issues) { issue in
                 VStack(alignment: .leading, spacing: 11) {
                     HStack {
@@ -507,6 +542,49 @@ struct StudioView: View {
             ForEach(report.caveats, id: \.self) { caveat in
                 Label(caveat, systemImage: "info.circle").font(.system(size: 11)).foregroundStyle(Design.subtle)
             }
+        }
+    }
+
+    private func fillerSuggestions(report: SpeechReport) -> some View {
+        VStack(alignment: .leading, spacing: 13) {
+            Text("Что сказать вместо слова-паразита")
+                .font(.system(size: 17, weight: .semibold)).foregroundStyle(Design.main)
+            Text("Не всегда нужно искать синоним. Иногда лучше сделать паузу или назвать мысль точнее.")
+                .font(.system(size: 12)).foregroundStyle(Design.subtle)
+            ForEach(report.fillerBreakdown.sorted(by: { $0.value > $1.value }).prefix(5), id: \.key) { item in
+                HStack(alignment: .top, spacing: 13) {
+                    Text("«\(item.key)»")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(Design.main)
+                        .frame(width: 110, alignment: .leading)
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text(fillerAdvice(for: item.key)).font(.system(size: 12)).foregroundStyle(Design.main)
+                        Text("В записи: \(item.value) раз. Проверь контекст: выражение может быть уместным.")
+                            .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                    }
+                    Spacer(minLength: 0)
+                }
+                .padding(12)
+                .background(Design.panel2, in: RoundedRectangle(cornerRadius: 11))
+            }
+            Button("Перейти к словарю и потренироваться") { page = .vocabulary }
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(Design.acid)
+                .buttonStyle(.plain)
+        }
+        .padding(19)
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 15))
+    }
+
+    private func fillerAdvice(for word: String) -> String {
+        switch word.lowercased() {
+        case "ну", "эээ", "эм", "ммм": return "Попробуй короткую паузу перед следующей мыслью."
+        case "короче": return "Если подводишь итог, скажи: «Главный вывод…»."
+        case "типа", "как бы": return "Назови факт прямо: «Например…» или уточни смысл."
+        case "вот": return "Начни сразу с содержательной части предложения."
+        case "по факту", "на самом деле": return "Если противопоставляешь аргументы, скажи: «Однако…»."
+        case "то есть": return "Для пояснения подойдёт «Иными словами…», но не заменяй один повтор другим."
+        case "в целом": return "Если обобщаешь: «Основной вывод…»."
+        default: return "Оцени роль выражения: оставь его, если оно нужно по смыслу, иначе сократи или сделай паузу."
         }
     }
 
