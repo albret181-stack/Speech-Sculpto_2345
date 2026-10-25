@@ -62,7 +62,7 @@ struct StudioSettings: View {
             HStack {
                 Button("Показать локальные записи") { studio.showFolder() }
                 Spacer()
-                Text("v0.6.0 · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("v0.6.1 · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(28).frame(width: 575)

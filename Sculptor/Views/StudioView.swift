@@ -47,6 +47,7 @@ struct StudioView: View {
     @State private var page: StudioPage = .home
     @State private var showImport = false
     @State private var showPreferences = false
+    @State private var showUpdatePanel = false
     @State private var toDelete: UUID?
     @State private var player: AVAudioPlayer?
 
@@ -132,7 +133,7 @@ struct StudioView: View {
             Rectangle().fill(Design.stroke).frame(height: 1)
             Text("Личная студия")
                 .font(.system(size: 11, weight: .bold)).foregroundStyle(Design.main)
-            Text("v0.6 · macOS")
+            Text("v0.6.1 · macOS")
                 .font(.system(size: 10)).foregroundStyle(Design.subtle)
         }
         .padding(16)
@@ -150,7 +151,10 @@ struct StudioView: View {
                 Circle().fill(Design.subtle.opacity(0.5)).frame(width: 6, height: 6)
             }
             Spacer()
-            Button { Task { await updates.check() } } label: {
+            Button {
+                showUpdatePanel = true
+                Task { await updates.check() }
+            } label: {
                 ZStack(alignment: .topTrailing) {
                     Image(systemName: updates.hasUpdate ? "bell.badge.fill" : "bell")
                         .font(.system(size: 15, weight: .medium))
@@ -164,15 +168,16 @@ struct StudioView: View {
             }
             .buttonStyle(.plain)
             .help("Проверить обновления")
-            .popover(isPresented: Binding(get: { updates.hasUpdate }, set: { _ in })) {
+            .popover(isPresented: $showUpdatePanel) {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text("Новое обновление").font(.headline)
-                    Text(updates.release?.name ?? updates.release?.tagName ?? "").font(.subheadline)
-                    Text(updates.release?.body ?? "").font(.caption).lineLimit(6)
-                    Button(updates.installing ? "Загрузка…" : "Скачать и установить") {
+                    Text(updates.hasUpdate ? "Доступно обновление" : "Обновления приложения").font(.headline)
+                    Text(updates.release?.name ?? "Проверка GitHub Releases").font(.subheadline)
+                    Text(updates.release?.body ?? updates.statusMessage ?? "Последняя версия проверяется при запуске приложения.").font(.caption).lineLimit(6)
+                    if updates.hasUpdate { Button(updates.installing ? "Загрузка…" : "Скачать и установить") {
                         Task { await updates.install() }
-                    }.disabled(!updates.canInstall || updates.installing)
-                    if !updates.canInstall { Text("Нет проверяемого установочного пакета.").font(.caption) }
+                    }.disabled(!updates.canInstall || updates.installing) }
+                    if updates.hasUpdate && !updates.canInstall { Text("Нет проверяемого установочного пакета.").font(.caption) }
+                    Button("Закрыть") { showUpdatePanel = false }
                 }.padding(18).frame(width: 315)
             }
             HStack(spacing: 8) {
