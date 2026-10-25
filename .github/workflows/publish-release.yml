@@ -18,6 +18,10 @@ jobs:
       - name: Audio regression before publishing
         shell: bash
         run: bash scripts/test_audio_pipeline.sh
+      - name: Check contextual speech scoring
+        run: |
+          swiftc -o /tmp/sculptor-context Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/ContextRegression.swift
+          /tmp/sculptor-context
       - name: Build macOS universal application
         shell: bash
         run: |
