@@ -1,44 +1,51 @@
 import Foundation
 import AVFoundation
-import CoreMedia
 import AudioToolbox
 
-/// Decodes any supported input audio into a predictable mono 16 kHz PCM CAF.
-/// Originals are never modified; converted files are temporary and cleaned up.
+/// Safely converts imported or microphone audio to mono 16 kHz float PCM in CAF.
+/// The original file is never overwritten.
+/// ExtAudioFile decodes compressed AAC/MP3 and PCM and does the sample-rate/channel conversion.
 enum AudioPreparation {
     enum Failure: LocalizedError {
-        case missingFile, emptyFile, missingTrack, readerUnavailable, noSamples, pcmCopyFailed(Int32), readFailed(String)
+        case missingFile
+        case emptyFile
+        case emptyDecodedFile
+        case audioToolbox(String, OSStatus)
+        case fileSystem(String)
+
         var errorDescription: String? {
             switch self {
-            case .missingFile: return "Исходный аудиофайл не найден. Проверь его в истории записей."
-            case .emptyFile: return "Аудиофайл пуст. Попробуй импортировать другую копию."
-            case .missingTrack: return "В файле не обнаружена аудиодорожка."
-            case .readerUnavailable: return "Не удалось открыть аудиодорожку для преобразования."
-            case .noSamples: return "Файл открылся, но в нём нет декодируемых звуковых данных."
-            case .pcmCopyFailed(let code): return "Не удалось преобразовать звуковые данные (код \(code))."
-            case .readFailed(let reason): return "Ошибка декодирования аудио: \(reason)"
+            case .missingFile:
+                return "Исходная запись не найдена. Открой её расположение через Историю."
+            case .emptyFile:
+                return "Аудиофайл пуст. Проверь, завершилась ли запись."
+            case .emptyDecodedFile:
+                return "Декодирование завершено, но в аудио нет звуковых сэмплов."
+            case .audioToolbox(let stage, let code):
+                return "Ошибка обработки звука на этапе «\(stage)» (OSStatus \(code))."
+            case .fileSystem(let stage):
+                return "Не удалось подготовить аудиофайл: \(stage)."
             }
         }
+    }
+
+    private static func checked(_ code: OSStatus, _ stage: String) throws {
+        guard code == noErr else { throw Failure.audioToolbox(stage, code) }
     }
 
     static func makeAnalysisCopy(from source: URL) async throws -> URL {
         let fm = FileManager.default
         guard fm.fileExists(atPath: source.path) else { throw Failure.missingFile }
-        let size = try source.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
-        guard size > 0 else { throw Failure.emptyFile }
+        guard (try source.resourceValues(forKeys: [.fileSizeKey])).fileSize ?? 0 > 0
+        else { throw Failure.emptyFile }
 
-        let asset = AVURLAsset(url: source)
-        guard let track = try await asset.loadTracks(withMediaType: .audio).first else {
-            throw Failure.missingTrack
-        }
-        let target = fm.temporaryDirectory.appendingPathComponent("SpeechSculptor-\(UUID().uuidString).caf")
+        let target = fm.temporaryDirectory.appendingPathComponent(
+            "SpeechSculptor-\(UUID().uuidString).caf"
+        )
         do {
             try await Task.detached(priority: .userInitiated) {
-                try decode(asset: asset, track: track, target: target)
+                try decode(source: source, target: target)
             }.value
-            // A complete and readable file is required before analysis starts.
-            let check = try AVAudioFile(forReading: target, commonFormat: .pcmFormatFloat32, interleaved: false)
-            guard check.length > 0 else { throw Failure.noSamples }
             return target
         } catch {
             try? fm.removeItem(at: target)
@@ -46,54 +53,76 @@ enum AudioPreparation {
         }
     }
 
-    private static func decode(asset: AVURLAsset, track: AVAssetTrack, target: URL) throws {
-        let outputFormat = AVAudioFormat(commonFormat: .pcmFormatInt16,
-                                         sampleRate: 16_000, channels: 1, interleaved: true)!
-        let settings: [String: Any] = [
-            AVFormatIDKey: Int(kAudioFormatLinearPCM),
-            AVSampleRateKey: 16_000,
-            AVNumberOfChannelsKey: 1,
-            AVLinearPCMBitDepthKey: 16,
-            AVLinearPCMIsFloatKey: false,
-            AVLinearPCMIsBigEndianKey: false,
-            AVLinearPCMIsNonInterleaved: false
-        ]
-        let reader = try AVAssetReader(asset: asset)
-        let output = AVAssetReaderTrackOutput(track: track, outputSettings: settings)
-        guard reader.canAdd(output) else { throw Failure.readerUnavailable }
-        reader.add(output)
-        guard reader.startReading() else {
-            throw Failure.readFailed(reader.error?.localizedDescription ?? "AVAssetReader не запустился.")
-        }
-        var framesWritten = 0
-        do {
-            let file = try AVAudioFile(forWriting: target,
-                                       settings: outputFormat.settings,
-                                       commonFormat: .pcmFormatInt16,
-                                       interleaved: true)
-            while let sample = output.copyNextSampleBuffer() {
-                let count = CMSampleBufferGetNumSamples(sample)
-                guard count > 0 else { continue }
-                guard let pcm = AVAudioPCMBuffer(
-                    pcmFormat: outputFormat,
-                    frameCapacity: AVAudioFrameCount(count)
-                ) else { throw Failure.readerUnavailable }
-                pcm.frameLength = AVAudioFrameCount(count)
-                let status = CMSampleBufferCopyPCMDataIntoAudioBufferList(
-                    sample, at: 0, frameCount: Int32(count),
-                    into: pcm.mutableAudioBufferList
+    private static func decode(source: URL, target: URL) throws {
+        var input: ExtAudioFileRef?
+        try checked(ExtAudioFileOpenURL(source as CFURL, &input), "открытие аудио")
+        guard let input else { throw Failure.fileSystem("не создан объект чтения") }
+        defer { ExtAudioFileDispose(input) }
+
+        // A mono float32 CAF works with both AVAudioFile and SFSpeechRecognizer.
+        var pcm = AudioStreamBasicDescription(
+            mSampleRate: 16_000,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsFloat | kAudioFormatFlagIsPacked |
+                          kAudioFormatFlagsNativeEndian,
+            mBytesPerPacket: 4,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 4,
+            mChannelsPerFrame: 1,
+            mBitsPerChannel: 32,
+            mReserved: 0
+        )
+        try checked(
+            ExtAudioFileSetProperty(
+                input, kExtAudioFileProperty_ClientDataFormat,
+                UInt32(MemoryLayout<AudioStreamBasicDescription>.size), &pcm
+            ),
+            "настройка декодера и преобразования в моно 16 кГц"
+        )
+
+        var output: ExtAudioFileRef?
+        try checked(
+            ExtAudioFileCreateWithURL(
+                target as CFURL, kAudioFileCAFType, &pcm, nil,
+                AudioFileFlags.eraseFile.rawValue, &output
+            ),
+            "создание временного CAF"
+        )
+        guard let output else { throw Failure.fileSystem("не создан выходной CAF") }
+        defer { ExtAudioFileDispose(output) }
+
+        // Explicitly set the writer's client format to match the input buffers.
+        try checked(
+            ExtAudioFileSetProperty(
+                output, kExtAudioFileProperty_ClientDataFormat,
+                UInt32(MemoryLayout<AudioStreamBasicDescription>.size), &pcm
+            ),
+            "настройка записи PCM"
+        )
+
+        let frameCount = 8192
+        var samples = [Float](repeating: 0, count: frameCount)
+        var totalFrames: Int64 = 0
+        while true {
+            var frames = UInt32(frameCount)
+            try samples.withUnsafeMutableBufferPointer { buffer in
+                var list = AudioBufferList(
+                    mNumberBuffers: 1,
+                    mBuffers: AudioBuffer(
+                        mNumberChannels: 1,
+                        mDataByteSize: UInt32(frameCount * MemoryLayout<Float>.size),
+                        mData: buffer.baseAddress
+                    )
                 )
-                guard status == noErr else { throw Failure.pcmCopyFailed(status) }
-                try file.write(from: pcm)
-                framesWritten += count
+                try checked(ExtAudioFileRead(input, &frames, &list), "чтение звуковых сэмплов")
+                if frames > 0 {
+                    list.mBuffers.mDataByteSize = frames * UInt32(MemoryLayout<Float>.size)
+                    try checked(ExtAudioFileWrite(output, frames, &list), "запись подготовленного звука")
+                }
             }
-        } catch {
-            reader.cancelReading()
-            throw error
+            if frames == 0 { break }
+            totalFrames += Int64(frames)
         }
-        guard reader.status == .completed else {
-            throw Failure.readFailed(reader.error?.localizedDescription ?? "Декодирование не завершено.")
-        }
-        guard framesWritten > 0 else { throw Failure.noSamples }
+        guard totalFrames > 0 else { throw Failure.emptyDecodedFile }
     }
 }
