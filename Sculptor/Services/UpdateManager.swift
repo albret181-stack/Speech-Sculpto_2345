@@ -3,21 +3,26 @@ import AppKit
 import Combine
 import CryptoKit
 
-/// Authenticated updater for the user's private repository.
-/// Uses GitHub CLI authentication; never embeds a GitHub token.
+/// Public GitHub Releases updater. No GitHub CLI or login required.
+/// Experimental updater: user must explicitly approve installation.
 @MainActor
 final class UpdateManager: ObservableObject {
-    struct Asset: Decodable { let name: String }
-    struct Release: Decodable {
+    struct Asset: Decodable, Sendable {
+        let name: String
+        let browserDownloadUrl: URL
+    }
+    struct Release: Decodable, Sendable {
         let tagName: String
         let name: String
-        let body: String
+        let body: String?
         let assets: [Asset]
+        func asset(_ name: String) -> Asset? { assets.first { $0.name == name } }
     }
 
     static let repo = "albret181-stack/Speech-Sculpto_2345"
     static let zipName = "SpeechSculptor-macOS-development.zip"
     static let digestName = "SHA256SUMS.txt"
+    static let apiURL = URL(string: "https://api.github.com/repos/albret181-stack/Speech-Sculpto_2345/releases/latest")!
 
     @Published var release: Release?
     @Published var checking = false
@@ -32,8 +37,7 @@ final class UpdateManager: ObservableObject {
     var hasUpdate: Bool { release != nil }
     var canInstall: Bool {
         guard let release else { return false }
-        return release.assets.contains { $0.name == Self.zipName } &&
-               release.assets.contains { $0.name == Self.digestName }
+        return release.asset(Self.zipName) != nil && release.asset(Self.digestName) != nil
     }
 
     func check(silent: Bool = false) async {
@@ -41,162 +45,166 @@ final class UpdateManager: ObservableObject {
         checking = true
         defer { checking = false; lastChecked = Date() }
         do {
-            let item: Release = try await Task.detached(priority: .utility) {
-                let data = try GitHubCLI.execute(["release", "view", "--repo", UpdateManager.repo,
-                                                  "--json", "tagName,name,body,assets"])
-                return try JSONDecoder().decode(Release.self, from: data)
-            }.value
+            let item = try await PublicReleases.latest()
             let remote = item.tagName.replacingOccurrences(of: "v", with: "", options: [.anchored])
-            let a = remote.split(separator: ".").compactMap { Int($0) }
-            let b = current.split(separator: ".").compactMap { Int($0) }
-            release = a.count == 3 && b.count == 3 && a.lexicographicallyPrecedes(b) == false && a != b ? item : nil
-            if !silent { statusMessage = release == nil ? "Обновлений нет. Версия \(current)." : "Доступна версия \(item.tagName)." }
-        } catch {
+            release = Self.isNewer(remote, than: current) ? item : nil
+            if !silent {
+                statusMessage = release == nil ? "Обновлений нет. Установлена версия \(current)." : "Доступна версия \(item.tagName)."
+            }
+        } catch PublicReleases.Error.noReleases {
             release = nil
-            if !silent { statusMessage = error.localizedDescription }
+            if !silent { statusMessage = "В GitHub ещё нет опубликованных релизов. Обновление появится после первого выпуска." }
+        } catch {
+            if !silent { statusMessage = "Не удалось проверить обновления: \(error.localizedDescription)" }
         }
     }
 
     func install() async {
         guard let release, canInstall, !installing else {
-            statusMessage = "В релизе нет архива и контрольной суммы для установки."
+            statusMessage = "Релиз не содержит установочного ZIP и контрольной суммы."
             return
         }
         installing = true
         defer { installing = false }
         do {
-            let candidate = try await Task.detached(priority: .userInitiated) {
-                try GitHubCLI.verifiedReleaseApp(tag: release.tagName)
-            }.value
+            let candidate = try await PublicReleases.fetchVerifiedApp(release)
             let target = Bundle.main.bundleURL
-            guard target.pathExtension == "app",
-                  FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path) else {
-                NSWorkspace.shared.activateFileViewerSelecting([candidate])
-                statusMessage = "Скачано. Приложение нельзя заменить автоматически в текущей папке. Открываю файл в Finder."
-                return
-            }
             guard let info = Bundle(url: candidate),
                   info.bundleIdentifier == Bundle.main.bundleIdentifier,
-                  info.infoDictionary?["CFBundleShortVersionString"] as? String ==
-                    release.tagName.replacingOccurrences(of: "v", with: "", options: [.anchored]) else {
-                throw GitHubCLI.Failure.invalidBundle
+                  let version = info.infoDictionary?["CFBundleShortVersionString"] as? String,
+                  version == release.tagName.replacingOccurrences(of: "v", with: "", options: [.anchored])
+            else { throw PublicReleases.Error.invalidApp }
+
+            guard target.pathExtension == "app",
+                  FileManager.default.isWritableFile(atPath: target.deletingLastPathComponent().path)
+            else {
+                NSWorkspace.shared.activateFileViewerSelecting([candidate])
+                statusMessage = "Обновление скачано и проверено. Автоматическая замена недоступна для текущего расположения программы. Открываю файл в Finder."
+                return
             }
-            let helper = Process()
-            helper.executableURL = URL(fileURLWithPath: "/bin/bash")
-            let script = #"""
-            set -euo pipefail
-            NEW="$1"; OLD="$2"; PID="$3"
-            for i in $(seq 1 80); do
-              if ! kill -0 "$PID" 2>/dev/null; then break; fi
-              sleep 0.5
-            done
-            if kill -0 "$PID" 2>/dev/null; then exit 1; fi
-            BACKUP="$OLD.previous"
-            [ ! -e "$BACKUP" ] || rm -rf "$BACKUP"
-            mv "$OLD" "$BACKUP"
-            if mv "$NEW" "$OLD"; then
-              open "$OLD"
-            else
-              mv "$BACKUP" "$OLD"
-              exit 1
-            fi
-            """#
-            helper.arguments = ["-c", script, "sculptor-update",
-                                candidate.path, target.path,
-                                String(ProcessInfo.processInfo.processIdentifier)]
-            helper.standardOutput = FileHandle.nullDevice
-            helper.standardError = FileHandle.nullDevice
-            try helper.run()
+            // Do not install without explicit user action.
+            try Self.launchReplacement(stage: candidate, installed: target)
             NSApp.terminate(nil)
         } catch {
             statusMessage = "Не удалось установить обновление: \(error.localizedDescription)"
         }
     }
+
+    private static func isNewer(_ candidate: String, than current: String) -> Bool {
+        let a = candidate.split(separator: ".").compactMap { Int($0) }
+        let b = current.split(separator: ".").compactMap { Int($0) }
+        guard a.count == 3 && b.count == 3 else { return false }
+        for index in 0..<3 {
+            if a[index] != b[index] { return a[index] > b[index] }
+        }
+        return false
+    }
+
+    private static func launchReplacement(stage: URL, installed: URL) throws {
+        // Wait for the original app to exit, keep one backup, and restart.
+        let bash = #"""
+        set -euo pipefail
+        NEW="$1"; OLD="$2"; PID="$3"
+        for i in $(seq 1 80); do
+          if ! kill -0 "$PID" 2>/dev/null; then break; fi
+          sleep 0.5
+        done
+        if kill -0 "$PID" 2>/dev/null; then exit 1; fi
+        BACKUP="$OLD.previous"
+        [ ! -e "$BACKUP" ] || rm -rf "$BACKUP"
+        mv "$OLD" "$BACKUP"
+        if mv "$NEW" "$OLD"; then open "$OLD"; else mv "$BACKUP" "$OLD"; exit 1; fi
+        """#
+        let helper = Process()
+        helper.executableURL = URL(fileURLWithPath: "/bin/bash")
+        helper.arguments = ["-c", bash, "sculptor-update", stage.path, installed.path, String(ProcessInfo.processInfo.processIdentifier)]
+        helper.standardOutput = FileHandle.nullDevice
+        helper.standardError = FileHandle.nullDevice
+        try helper.run()
+    }
 }
 
-private enum GitHubCLI {
-    enum Failure: LocalizedError {
-        case noCLI, invalidBundle, invalidChecksum, releaseFilesMissing, failed(String)
+private enum PublicReleases {
+    enum Error: LocalizedError {
+        case noReleases, missingAssets, badChecksum, invalidApp, http(Int), badVersionTag
         var errorDescription: String? {
             switch self {
-            case .noCLI: return "Требуется GitHub CLI. Установи: brew install gh, затем gh auth login."
-            case .invalidBundle: return "Неверная версия или структура приложения в релизе."
-            case .invalidChecksum: return "Контрольная сумма SHA-256 не совпала — обновление остановлено."
-            case .releaseFilesMissing: return "В GitHub Releases отсутствуют нужные файлы."
-            case .failed(let text): return text
+            case .noReleases: return "В GitHub пока нет релизов."
+            case .missingAssets: return "В релизе отсутствует ZIP или SHA256SUMS.txt."
+            case .badChecksum: return "Контрольная сумма ZIP не совпала. Установка отменена."
+            case .invalidApp: return "Архив не содержит приложение с ожидаемым идентификатором и версией."
+            case .http(let status): return "GitHub вернул HTTP \(status)."
+            case .badVersionTag: return "Некорректный номер версии релиза."
             }
         }
     }
 
-    static func execute(_ arguments: [String]) throws -> Data {
-        guard let executable = ["/opt/homebrew/bin/gh", "/usr/local/bin/gh", "/usr/bin/gh"]
-            .first(where: { FileManager.default.isExecutableFile(atPath: $0) }) else {
-            throw Failure.noCLI
-        }
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: executable)
-        task.arguments = arguments
-        let out = Pipe(), err = Pipe()
-        task.standardOutput = out
-        task.standardError = err
-        try task.run()
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        let stderr = err.fileHandleForReading.readDataToEndOfFile()
-        task.waitUntilExit()
-        guard task.terminationStatus == 0 else {
-            throw Failure.failed(String((String(data: stderr, encoding: .utf8) ?? "GitHub недоступен.").prefix(360)))
-        }
-        return data
+    static func request(_ url: URL) -> URLRequest {
+        var r = URLRequest(url: url)
+        r.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        r.setValue("SpeechSculptor-Mac-Updater", forHTTPHeaderField: "User-Agent")
+        r.timeoutInterval = 60
+        return r
     }
 
-    static func verifiedReleaseApp(tag: String) throws -> URL {
-        guard tag.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil else {
-            throw Failure.invalidBundle
-        }
-        let fm = FileManager.default
-        let base = fm.temporaryDirectory.appendingPathComponent("sculptor-update-\(UUID().uuidString)")
-        try fm.createDirectory(at: base, withIntermediateDirectories: true)
+    static func latest() async throws -> UpdateManager.Release {
+        let (data, response) = try await URLSession.shared.data(for: request(UpdateManager.apiURL))
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        if status == 404 { throw Error.noReleases }
+        guard status == 200 else { throw Error.http(status) }
+        let decoder = JSONDecoder()
+        decoder.keyDecodingStrategy = .convertFromSnakeCase
+        return try decoder.decode(UpdateManager.Release.self, from: data)
+    }
+
+    static func fetchVerifiedApp(_ release: UpdateManager.Release) async throws -> URL {
+        guard release.tagName.range(of: #"^v[0-9]+\.[0-9]+\.[0-9]+$"#, options: .regularExpression) != nil
+        else { throw Error.badVersionTag }
+        guard let archive = release.asset(UpdateManager.zipName),
+              let checksums = release.asset(UpdateManager.digestName) else { throw Error.missingAssets }
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("sculptor-update-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         do {
-            for file in [UpdateManager.zipName, UpdateManager.digestName] {
-                _ = try execute(["release", "download", tag, "--repo", UpdateManager.repo,
-                                 "--pattern", file, "--dir", base.path])
-            }
-            let zip = base.appendingPathComponent(UpdateManager.zipName)
-            let digestFile = base.appendingPathComponent(UpdateManager.digestName)
-            guard fm.fileExists(atPath: zip.path), fm.fileExists(atPath: digestFile.path) else {
-                throw Failure.releaseFilesMissing
-            }
-            let lines = try String(contentsOf: digestFile, encoding: .utf8).split(separator: "\n")
-            let expected = lines.compactMap { line -> String? in
+            let (tempArchive, zipResponse) = try await URLSession.shared.download(for: request(archive.browserDownloadUrl))
+            guard (zipResponse as? HTTPURLResponse)?.statusCode == 200 else { throw Error.missingAssets }
+            let zip = root.appendingPathComponent(UpdateManager.zipName)
+            try FileManager.default.moveItem(at: tempArchive, to: zip)
+
+            let (data, checksumResponse) = try await URLSession.shared.data(for: request(checksums.browserDownloadUrl))
+            guard (checksumResponse as? HTTPURLResponse)?.statusCode == 200,
+                  let list = String(data: data, encoding: .utf8) else { throw Error.missingAssets }
+            let expected = list.split(separator: "\n").compactMap { line -> String? in
                 let parts = line.split(whereSeparator: { $0.isWhitespace })
-                guard parts.count >= 2, String(parts.last!).hasSuffix(UpdateManager.zipName) else { return nil }
+                guard parts.count >= 2,
+                      String(parts.last!).hasSuffix(UpdateManager.zipName) else { return nil }
                 return String(parts[0]).lowercased()
             }.first
-            guard let expected, expected.count == 64 else { throw Failure.invalidChecksum }
+            guard let expected, expected.count == 64 else { throw Error.badChecksum }
             let reader = try FileHandle(forReadingFrom: zip)
             defer { try? reader.close() }
             var hash = SHA256()
             while true {
-                let chunk = try reader.read(upToCount: 1024 * 1024) ?? Data()
-                if chunk.isEmpty { break }
-                hash.update(data: chunk)
+                let part = try reader.read(upToCount: 1024 * 1024) ?? Data()
+                if part.isEmpty { break }
+                hash.update(data: part)
             }
-            let actual = hash.finalize().map { String(format: "%02x", $0) }.joined()
-            guard expected == actual else { throw Failure.invalidChecksum }
-            let unpacked = base.appendingPathComponent("extracted", isDirectory: true)
-            try fm.createDirectory(at: unpacked, withIntermediateDirectories: true)
-            let ditto = Process()
-            ditto.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
-            ditto.arguments = ["-x", "-k", zip.path, unpacked.path]
-            try ditto.run()
-            ditto.waitUntilExit()
-            let candidate = unpacked.appendingPathComponent("SpeechSculptor.app")
-            guard ditto.terminationStatus == 0,
-                  fm.fileExists(atPath: candidate.appendingPathComponent("Contents/Info.plist").path)
-            else { throw Failure.invalidBundle }
+            guard hash.finalize().map({ String(format: "%02x", $0) }).joined() == expected
+            else { throw Error.badChecksum }
+
+            let destination = root.appendingPathComponent("contents", isDirectory: true)
+            try FileManager.default.createDirectory(at: destination, withIntermediateDirectories: true)
+            let extractor = Process()
+            extractor.executableURL = URL(fileURLWithPath: "/usr/bin/ditto")
+            extractor.arguments = ["-x", "-k", zip.path, destination.path]
+            try extractor.run()
+            extractor.waitUntilExit()
+            guard extractor.terminationStatus == 0 else { throw Error.invalidApp }
+            let candidate = destination.appendingPathComponent("SpeechSculptor.app")
+            guard FileManager.default.fileExists(atPath: candidate.appendingPathComponent("Contents/Info.plist").path)
+            else { throw Error.invalidApp }
             return candidate
         } catch {
-            try? fm.removeItem(at: base)
+            try? FileManager.default.removeItem(at: root)
             throw error
         }
     }
