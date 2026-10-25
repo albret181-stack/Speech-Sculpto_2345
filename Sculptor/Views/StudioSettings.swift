@@ -55,7 +55,7 @@ struct StudioSettings: View {
                 if let message = updates.statusMessage {
                     Text(message).font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Для приватного GitHub нужен установленный и авторизованный gh. Релизы должны содержать ZIP и SHA256SUMS.txt.")
+                Text("Проверка публичных GitHub Releases без авторизации. Для установки релиз должен содержать ZIP и SHA256SUMS.txt. Обновления пока экспериментальные, без подписи разработчика.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Divider()
