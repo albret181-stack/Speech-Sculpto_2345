@@ -19,8 +19,15 @@ enum AudioAnalyzer {
         var reduced: [Float] = []
         reduced.reserveCapacity(Int(Double(file.length) / Double(step)) + 1)
         var offset = 0
-        while true {
-            try file.read(into: buf, frameCount: chunkSize)
+        while file.framePosition < file.length {
+            let remaining = file.length - file.framePosition
+            let requested = AVAudioFrameCount(min(AVAudioFramePosition(chunkSize), remaining))
+            guard requested > 0 else { break }
+            do {
+                try file.read(into: buf, frameCount: requested)
+            } catch {
+                throw AudioError.unreadableAudio
+            }
             let count = Int(buf.frameLength)
             guard count > 0 else { break }
             guard let data = buf.floatChannelData else { throw AudioError.unreadableAudio }
