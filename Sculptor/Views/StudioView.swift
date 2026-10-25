@@ -3,14 +3,14 @@ import AVFoundation
 import UniformTypeIdentifiers
 
 private enum Design {
-    static let bg = Color(hex: 0x090F13)
-    static let side = Color(hex: 0x10191D)
-    static let panel = Color(hex: 0x172226)
-    static let panel2 = Color(hex: 0x1D2A2E)
-    static let main = Color(hex: 0xEDF3EF)
-    static let subtle = Color(hex: 0x91A19F)
-    static let acid = Color(hex: 0xD2F36E)
-    static let stroke = Color(hex: 0x354447)
+    static let bg = Color(hex: 0xFAF6F4)
+    static let side = Color(hex: 0xF2E5E8)
+    static let panel = Color(hex: 0xFFFFFF)
+    static let panel2 = Color(hex: 0xF8E9E9)
+    static let main = Color(hex: 0x372C35)
+    static let subtle = Color(hex: 0x796A72)
+    static let acid = Color(hex: 0xA44E73)
+    static let stroke = Color(hex: 0xE3D3D8)
 }
 
 extension Color {
