@@ -71,9 +71,10 @@ struct StudioView: View {
         }
         .background(Design.bg)
         .sheet(isPresented: $showPreferences) { StudioSettings().environmentObject(studio) }
-        .fileImporter(isPresented: $showImport, allowedContentTypes: [.audio], allowsMultipleSelection: false) { result in
-            if case .success(let urls) = result, let first = urls.first {
-                Task { await studio.importAudio(first); page = .analysis }
+        .fileImporter(isPresented: $showImport, allowedContentTypes: [.audio], allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result, !urls.isEmpty {
+                page = .history
+                Task { await studio.importBatch(urls, allowAppleCloud: allowAppleCloud) }
             }
         }
         .alert("Сообщение", isPresented: Binding(get: { studio.message != nil }, set: { if !$0 { studio.message = nil } })) {
@@ -222,7 +223,7 @@ struct StudioView: View {
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(studio.isBusy || studio.processingID != nil)
-                Button { showImport = true } label: { Label("Загрузить аудио", systemImage: "square.and.arrow.down") }
+                Button { showImport = true } label: { Label("Загрузить аудиофайлы", systemImage: "square.and.arrow.down.on.square") }
                     .buttonStyle(OutlineButtonStyle())
                     .disabled(studio.isRecording)
                 Spacer()
@@ -416,6 +417,31 @@ struct StudioView: View {
 
     private var history: some View {
         VStack(alignment: .leading, spacing: 20) {
+            if studio.batchActive || !studio.batchSummary.isEmpty {
+                VStack(alignment: .leading, spacing: 9) {
+                    HStack {
+                        Label(studio.batchActive ? "Пакетная обработка" : "Пакетная обработка завершена",
+                              systemImage: studio.batchActive ? "waveform" : "checkmark.circle")
+                            .font(.system(size: 16, weight: .semibold))
+                        Spacer()
+                        Text("\(studio.batchProcessed) / \(studio.batchTotal)")
+                            .monospacedDigit().foregroundStyle(Design.acid)
+                    }
+                    ProgressView(value: Double(studio.batchProcessed),
+                                 total: Double(max(1, studio.batchTotal)))
+                        .tint(Design.acid)
+                    if studio.batchActive {
+                        Text("Сейчас: \(studio.batchCurrentFile)")
+                            .font(.system(size: 12)).foregroundStyle(Design.subtle).lineLimit(2)
+                    } else {
+                        Text(studio.batchSummary)
+                            .font(.system(size: 12)).foregroundStyle(Design.subtle)
+                    }
+                    Text("Файлы обрабатываются по очереди. При ошибке остальные продолжат обработку.")
+                        .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                }
+                .padding(18).background(Design.panel, in: RoundedRectangle(cornerRadius: 15))
+            }
             Text("История голоса")
                 .font(.system(size: 44, weight: .bold, design: .rounded)).tracking(-1.5)
             Text("Твои записи и тренировки остаются на этом Mac.")
