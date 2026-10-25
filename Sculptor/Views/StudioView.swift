@@ -48,6 +48,7 @@ struct StudioView: View {
     @EnvironmentObject private var studio: StudioController
     @EnvironmentObject private var updates: UpdateManager
     @EnvironmentObject private var vocabulary: VocabularyStore
+    @EnvironmentObject private var coaching: CoachingStore
     @AppStorage("allowAppleCloud") private var allowAppleCloud = false
     @AppStorage("aiProvider") private var providerRaw = AIProvider.none.rawValue
     @AppStorage("aiModel") private var selectedModel = "qwen3:4b"
@@ -57,6 +58,7 @@ struct StudioView: View {
     @State private var showUpdatePanel = false
     @State private var toDelete: UUID?
     @State private var player: AVAudioPlayer?
+    @State private var activeLessonID: String?
 
     private var report: SpeechReport? { studio.selected?.report ?? studio.latestReport }
 
@@ -231,7 +233,7 @@ struct StudioView: View {
                     HStack(spacing: 12) {
                         stat("ЗАПИСЕЙ", value: "\(studio.totalRecordings)", symbol: "mic")
                         stat("СЛОВ-ПАРАЗИТОВ", value: "\(studio.totalFillers)", symbol: "quote.bubble")
-                        stat("УРОКОВ", value: "\(studio.completedLessons)", symbol: "graduationcap")
+                        stat("УРОКОВ", value: "\(coaching.completed(studio.sessions).count)", symbol: "graduationcap")
                     }
                     recentRecordings
                 }
@@ -644,66 +646,107 @@ struct StudioView: View {
     }
 
     private var training: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        let baseline = studio.sessions.first(where: { !$0.isPractice && $0.report != nil })
+        let recommended = LessonPlanner.recommended(from: baseline)
+        let choices = [recommended,
+            CoachingLesson(id: "filler", title: "Осознанная пауза", instruction: "За минуту объясни идею, заменяя лишние вводные слова паузами.", focus: "filler", baselineID: baseline?.id, baselineRate: baseline?.report?.metrics.fillersPer100, createdAt: Date()),
+            CoachingLesson(id: "intonation", title: "Интонационный акцент", instruction: "Выделяй голосом ключевое слово каждой фразы. Не пытайся искусственно повышать голос.", focus: "intonation", baselineID: baseline?.id, baselineRate: nil, createdAt: Date()),
+            CoachingLesson(id: "clarity", title: "Тезис — аргумент — вывод", instruction: "За минуту сформулируй тезис, один аргумент и ясный вывод.", focus: "clarity", baselineID: baseline?.id, baselineRate: nil, createdAt: Date())
+        ]
+        let unique = choices.enumerated().filter { index, item in
+            !choices.prefix(index).contains(where: { $0.id == item.id })
+        }.map { $0.element }
+        let selected = coaching.lessons.first(where: { $0.id == activeLessonID }) ?? unique.first!
+        let relevantAttempts = coaching.attempts(for: selected.id, sessions: studio.sessions)
+        return VStack(alignment: .leading, spacing: 22) {
             sectionTitle("ПЕРСОНАЛЬНАЯ ПРАКТИКА")
-            Text("Не просто заметить.\nИзменить привычку.")
-                .font(.system(size: 43, weight: .bold, design: .rounded)).tracking(-1.5)
-            let issue = studio.latestReport?.issues.first
-            VStack(alignment: .leading, spacing: 18) {
-                HStack { Image(systemName: "target").foregroundStyle(Design.acid); sectionTitle("СЕГОДНЯШНЯЯ ЦЕЛЬ") }
-                Text(issue?.heading ?? "Ясная формулировка мысли")
-                    .font(.system(size: 24, weight: .semibold)).foregroundStyle(Design.main)
-                Text(issue?.exercise ?? "За 45 секунд расскажи об одной идее по схеме: проблема → предложение → результат.")
-                    .font(.system(size: 16)).foregroundStyle(Design.subtle).lineSpacing(5)
-                Rectangle().fill(Design.stroke).frame(height: 1)
-                HStack(spacing: 10) {
-                    step("01", "Выбери одну мысль")
-                    step("02", "Произнеси её заново")
-                    step("03", "Сравни результаты")
-                }
-                HStack(spacing: 15) {
+            Text("Тренируй одну привычку за раз.")
+                .font(.system(size: 39, weight: .semibold, design: .rounded)).foregroundStyle(Design.main)
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 12) {
+                    sectionTitle("ПОДОБРАНО ПО ТВОИМ ЗАПИСЯМ")
+                    ForEach(unique, id: \.id) { lesson in
+                        Button {
+                            if coaching.select(lesson) { activeLessonID = lesson.id }
+                        } label: {
+                            HStack {
+                                Image(systemName: lesson.id == selected.id ? "checkmark.circle.fill" : "circle")
+                                    .foregroundStyle(Design.acid)
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text(lesson.title).font(.system(size: 13, weight: .semibold))
+                                    if lesson.id == recommended.id { Text("Рекомендовано").font(.system(size: 10)).foregroundStyle(Design.acid) }
+                                }
+                                Spacer()
+                            }.foregroundStyle(Design.main).padding(12)
+                                .background(lesson.id == selected.id ? Design.mutedBlue : Design.bg,
+                                            in: RoundedRectangle(cornerRadius: 12))
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(19).frame(width: 262)
+                    .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 15) {
+                    Label("ТВОЁ УПРАЖНЕНИЕ", systemImage: "target")
+                        .font(.system(size: 11, weight: .semibold)).foregroundStyle(Design.acid)
+                    Text(selected.title).font(.system(size: 24, weight: .semibold)).foregroundStyle(Design.main)
+                    Text(selected.instruction).font(.system(size: 14)).foregroundStyle(Design.subtle)
+                    Text("Запиши попытку, затем сравни её с предыдущими по одинаковому упражнению.")
+                        .font(.system(size: 12)).foregroundStyle(Design.subtle)
                     Button {
                         Task {
                             if studio.isRecording {
                                 if let id = await studio.stop() {
                                     await studio.analyze(id, allowAppleCloud: allowAppleCloud)
                                 }
-                            } else { await studio.start(practice: true) }
+                            } else {
+                                if !coaching.lessons.contains(where: { $0.id == selected.id }) {
+                                    guard coaching.select(selected) else { return }
+                                }
+                                activeLessonID = selected.id
+                                await studio.start(practice: true, lessonID: selected.id)
+                            }
                         }
                     } label: {
-                        Label(studio.isRecording ? "Завершить упражнение" : "Записать попытку", systemImage: studio.isRecording ? "stop.fill" : "mic")
+                        Label(studio.isRecording ? "Завершить упражнение" : "Записать попытку",
+                              systemImage: studio.isRecording ? "stop.fill" : "mic")
                     }.buttonStyle(PrimaryButtonStyle()).disabled(studio.isBusy || studio.processingID != nil)
                     if studio.isRecording { Text(timeString(studio.elapsed)).monospacedDigit().foregroundStyle(Design.acid) }
-                    if studio.processingID != nil { ProgressView().tint(Design.acid) }
-                }
+                    if studio.processingID != nil { ProgressView() }
+                }.padding(23).frame(maxWidth: .infinity, alignment: .topLeading)
+                    .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
             }
-            .padding(25).background(Design.panel, in: RoundedRectangle(cornerRadius: 18))
-            sectionTitle("ПОСЛЕДНИЕ ПОПЫТКИ")
-            let attempts = studio.sessions.filter { $0.isPractice && $0.report != nil }
-            if attempts.isEmpty {
-                emptyHint("Пока нет выполненных упражнений", "После записи попытки появятся её измерения. Прогресс оценивай по нескольким занятиям, а не по одному повтору.")
+            sectionTitle("ИСТОРИЯ УПРАЖНЕНИЯ")
+            if relevantAttempts.isEmpty {
+                emptyHint("Пока нет попыток", "Первая запись создаст историю этого урока. Оценку сформируем после распознавания речи.")
             } else {
-                if let before = studio.latestReport, let after = attempts.first?.report,
-                   before.metrics.words > 0, after.metrics.words > 0 {
-                    VStack(alignment: .leading, spacing: 12) {
-                        sectionTitle("СРАВНЕНИЕ С ПОСЛЕДНЕЙ ОБЫЧНОЙ ЗАПИСЬЮ")
-                        HStack {
-                            metric("БЫЛО", String(format: "%.1f", before.metrics.fillersPer100), "потенциальных паразитов / 100 слов")
-                            metric("ПОСЛЕ", String(format: "%.1f", after.metrics.fillersPer100), "потенциальных паразитов / 100 слов")
-                        }
-                        Text("Сравнение ориентировочное: упражнение и обычный разговор различаются по содержанию и длительности.")
-                            .font(.system(size: 11)).foregroundStyle(Design.subtle)
-                    }.padding(15).background(Design.panel, in: RoundedRectangle(cornerRadius: 14))
-                }
-                ForEach(attempts.prefix(5)) { session in
+                let baselineAttempt = relevantAttempts.reversed().first(where: { ($0.1.report?.metrics.words ?? 0) > 0 })?.1
+                ForEach(relevantAttempts, id: \.0.id) { _, session in
                     HStack {
-                        Text(session.createdAt, format: .dateTime.day().month().hour().minute())
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(session.createdAt, format: .dateTime.day().month().hour().minute())
+                                .foregroundStyle(Design.main)
+                            Text(session.report == nil ? "Анализ ещё не выполнен" : "Анализ готов")
+                                .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                        }
                         Spacer()
-                        Text("\(session.report?.metrics.fillerCount ?? 0) повторов").foregroundStyle(Design.subtle)
+                        if selected.focus == "filler", let report = session.report, report.metrics.words > 0 {
+                            Text(String(format: "%.1f / 100 слов", report.metrics.fillersPer100))
+                                .foregroundStyle(Design.main)
+                            if let initial = baselineAttempt?.report, initial.metrics.words > 0 {
+                                Text(String(format: "Первая: %.1f", initial.metrics.fillersPer100))
+                                    .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                            }
+                        } else if session.report != nil {
+                            Text("Просмотри разбор").font(.system(size: 11)).foregroundStyle(Design.subtle)
+                        }
                         Button("Разбор") { studio.selectedID = session.id; page = .analysis }
                             .buttonStyle(.plain).foregroundStyle(Design.acid)
-                    }.padding(15).background(Design.panel, in: RoundedRectangle(cornerRadius: 12))
+                    }.padding(14).background(Design.panel, in: RoundedRectangle(cornerRadius: 12))
                 }
+            }
+            Text("Сравнение ориентировочное. Попытки могут отличаться по длительности и сложности; успех урока не определяется одним числом.")
+                .font(.system(size: 11)).foregroundStyle(Design.subtle)
+            if let error = coaching.message {
+                Text(error).foregroundStyle(.red).font(.caption)
             }
         }
     }
