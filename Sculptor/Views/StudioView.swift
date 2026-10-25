@@ -301,67 +301,98 @@ struct StudioView: View {
 
     private var capturePanel: some View {
         VStack(alignment: .leading, spacing: 17) {
+            captureHeadline
+            captureWaveform
+            captureActions
+            Text("Перед записью разговора предупреди других участников.")
+                .font(.system(size: 10))
+                .foregroundStyle(Design.subtle)
+        }
+        .padding(25)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(
+                colors: [Design.panel, Design.panel2, Design.bg],
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            ),
+            in: RoundedRectangle(cornerRadius: 23)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 23)
+                .stroke(Color.white.opacity(0.85), lineWidth: 1)
+        )
+    }
+
+    private var captureHeadline: some View {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
                 sectionTitle("НОВАЯ ЗАПИСЬ / 01")
                 Spacer()
                 Text(studio.isRecording ? "● Идёт запись" : "● Готово к записи")
                     .font(.system(size: 10, weight: .medium))
-                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .padding(.horizontal, 11)
+                    .padding(.vertical, 7)
                     .background(Design.panel, in: Capsule())
             }
             Text(studio.isRecording ? "Записываем твой голос." : "Начни с голоса.\nОстальное — за нами.")
                 .font(.system(size: 27, weight: .semibold, design: .rounded))
-                .tracking(-0.9).foregroundStyle(Design.main)
+                .tracking(-0.9)
+                .foregroundStyle(Design.main)
                 .fixedSize(horizontal: false, vertical: true)
             Text("Разговор или свободный рассказ. Запись и результаты останутся на Mac.")
-                .font(.system(size: 12)).foregroundStyle(Design.subtle)
-            HStack(alignment: .center, spacing: 3) {
-                ForEach(0..<58, id: \.self) { idx in
-                    Capsule()
-                        .fill(Design.main.opacity(0.25 + Double((idx * 19) % 13) / 19.0))
-                        .frame(maxWidth: .infinity)
-                        .frame(height: CGFloat(8 + (idx * 29 + idx * idx * 3) % 54))
-                }
-            }
-            .frame(height: 70)
-            .accessibilityLabel("Декоративная звуковая волна, не сигнал микрофона")
-            HStack(spacing: 10) {
-                Button {
-                    Task {
-                        if studio.isRecording {
-                            if let id = await studio.stop() {
-                                page = .analysis
-                                await studio.analyze(id, allowAppleCloud: allowAppleCloud)
-                            }
-                        } else { await studio.start() }
-                    }
-                } label: {
-                    Label(studio.isRecording ? "Завершить и разобрать" : "Начать запись",
-                          systemImage: studio.isRecording ? "stop.fill" : "record.circle")
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .disabled(studio.isBusy || studio.processingID != nil)
-                Button { showImport = true } label: {
-                    Label("Загрузить аудиофайлы", systemImage: "square.and.arrow.down.on.square")
-                }
-                .buttonStyle(OutlineButtonStyle())
-                .disabled(studio.isRecording || studio.isBusy)
-                Spacer(minLength: 0)
-                Text(studio.isRecording ? timeString(studio.elapsed) : "00:00")
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-                    .foregroundStyle(Design.main)
-            }
-            Text("Перед записью разговора предупреди других участников.")
-                .font(.system(size: 10)).foregroundStyle(Design.subtle)
+                .font(.system(size: 12))
+                .foregroundStyle(Design.subtle)
         }
-        .padding(25)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            LinearGradient(colors: [Design.panel, Design.panel2, Design.bg],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: RoundedRectangle(cornerRadius: 23)
-        )
-        .overlay(RoundedRectangle(cornerRadius: 23).stroke(Color.white.opacity(0.85), lineWidth: 1))
+    }
+
+    private var captureWaveform: some View {
+        HStack(alignment: .center, spacing: 3) {
+            ForEach(0..<58, id: \.self) { idx in
+                Capsule()
+                    .fill(Design.main.opacity(Double(5 + (idx * 19) % 13) / 20.0))
+                    .frame(maxWidth: .infinity)
+                    .frame(height: CGFloat(8 + (idx * 29 + idx * idx * 3) % 54))
+            }
+        }
+        .frame(height: 70)
+        .accessibilityLabel("Декоративная звуковая волна, не сигнал микрофона")
+    }
+
+    private var captureActions: some View {
+        HStack(spacing: 10) {
+            Button(action: toggleStudioRecording) {
+                Label(studio.isRecording ? "Завершить и разобрать" : "Начать запись",
+                      systemImage: studio.isRecording ? "stop.fill" : "record.circle")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(studio.isBusy || studio.processingID != nil)
+
+            Button {
+                showImport = true
+            } label: {
+                Label("Загрузить аудиофайлы", systemImage: "square.and.arrow.down.on.square")
+            }
+            .buttonStyle(OutlineButtonStyle())
+            .disabled(studio.isRecording || studio.isBusy)
+            Spacer(minLength: 0)
+            Text(studio.isRecording ? timeString(studio.elapsed) : "00:00")
+                .font(.system(size: 14, weight: .medium, design: .monospaced))
+                .foregroundStyle(Design.main)
+        }
+    }
+
+    private func toggleStudioRecording() {
+        Task { @MainActor in
+            if studio.isRecording {
+                if let id = await studio.stop() {
+                    page = .analysis
+                    await studio.analyze(id, allowAppleCloud: allowAppleCloud)
+                }
+            } else {
+                await studio.start()
+            }
+        }
     }
 
     private var analysis: some View {
