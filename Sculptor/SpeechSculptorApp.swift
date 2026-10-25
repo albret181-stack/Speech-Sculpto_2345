@@ -4,7 +4,7 @@ import SwiftUI
 struct SpeechSculptorApp: App {
     @StateObject private var studio = StudioController()
     @StateObject private var updates = UpdateManager()
-    @StateObject private var vocabulary = VocabularyStore()
+    @StateObject private var vocabulary = VocabularyStore.shared
     var body: some Scene {
         WindowGroup("Скульптор речи") {
             StudioView()
