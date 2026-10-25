@@ -40,7 +40,7 @@ enum AudioPreparation {
         else { throw Failure.emptyFile }
 
         let target = fm.temporaryDirectory.appendingPathComponent(
-            "SpeechSculptor-\(UUID().uuidString).caf"
+            "SpeechSculptor-\(UUID().uuidString).wav"
         )
         do {
             try await Task.detached(priority: .userInitiated) {
@@ -59,7 +59,7 @@ enum AudioPreparation {
         guard let input else { throw Failure.fileSystem("не создан объект чтения") }
         defer { ExtAudioFileDispose(input) }
 
-        // A mono float32 CAF works with both AVAudioFile and SFSpeechRecognizer.
+        // Use float32 client buffers and write a standard 16-bit mono PCM WAV, which AVAudioFile reads reliably.
         var pcm = AudioStreamBasicDescription(
             mSampleRate: 16_000,
             mFormatID: kAudioFormatLinearPCM,
@@ -80,15 +80,26 @@ enum AudioPreparation {
             "настройка декодера и преобразования в моно 16 кГц"
         )
 
+        var fileFormat = AudioStreamBasicDescription(
+            mSampleRate: 16_000,
+            mFormatID: kAudioFormatLinearPCM,
+            mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
+            mBytesPerPacket: 2,
+            mFramesPerPacket: 1,
+            mBytesPerFrame: 2,
+            mChannelsPerFrame: 1,
+            mBitsPerChannel: 16,
+            mReserved: 0
+        )
         var output: ExtAudioFileRef?
         try checked(
             ExtAudioFileCreateWithURL(
-                target as CFURL, kAudioFileCAFType, &pcm, nil,
+                target as CFURL, kAudioFileWAVEType, &fileFormat, nil,
                 AudioFileFlags.eraseFile.rawValue, &output
             ),
-            "создание временного CAF"
+            "создание временного WAV"
         )
-        guard let output else { throw Failure.fileSystem("не создан выходной CAF") }
+        guard let output else { throw Failure.fileSystem("не создан выходной WAV") }
         defer { ExtAudioFileDispose(output) }
 
         // Explicitly set the writer's client format to match the input buffers.
