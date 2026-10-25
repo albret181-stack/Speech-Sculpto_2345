@@ -347,22 +347,13 @@ struct StudioView: View {
     }
 
     private var captureWaveform: some View {
-        Canvas { context, size in
-            let count = 58
-            let spacing: CGFloat = 3
-            let barWidth = max(1, (size.width - CGFloat(count - 1) * spacing) / CGFloat(count))
-            for index in 0..<count {
-                let height = CGFloat(8 + (index * 29 + index * index * 3) % 54)
-                let x = CGFloat(index) * (barWidth + spacing)
-                let rect = CGRect(x: x, y: (size.height - height) / 2,
-                                  width: barWidth, height: height)
-                let alpha = Double(5 + (index * 19) % 13) / 20
-                let bar = Path(roundedRect: rect, cornerRadius: barWidth / 2)
-                context.fill(bar, with: .color(Design.main.opacity(alpha)))
-            }
-        }
-        .frame(height: 70)
-        .accessibilityLabel("Декоративная звуковая волна, не сигнал микрофона")
+        Image(systemName: "waveform")
+            .resizable()
+            .scaledToFit()
+            .frame(height: 70)
+            .frame(maxWidth: .infinity)
+            .foregroundStyle(Design.main.opacity(0.55))
+            .accessibilityLabel("Декоративная звуковая волна, не сигнал микрофона")
     }
 
     private var captureActions: some View {
