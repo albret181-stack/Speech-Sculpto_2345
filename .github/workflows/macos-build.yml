@@ -30,6 +30,7 @@ jobs:
           swift scripts/generate_icon.swift build/SpeechSculptor.iconset
           iconutil -c icns build/SpeechSculptor.iconset -o build/SpeechSculptor.icns
           APP='build/Build/Products/Release/SpeechSculptor.app'
+          mkdir -p "$APP/Contents/Resources"
           cp build/SpeechSculptor.icns "$APP/Contents/Resources/SpeechSculptor.icns"
           /usr/libexec/PlistBuddy -c 'Add :CFBundleIconFile string SpeechSculptor' "$APP/Contents/Info.plist" || \\
           /usr/libexec/PlistBuddy -c 'Set :CFBundleIconFile SpeechSculptor' "$APP/Contents/Info.plist"
