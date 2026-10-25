@@ -3,6 +3,7 @@ import AppKit
 
 struct StudioSettings: View {
     @EnvironmentObject private var studio: StudioController
+    @EnvironmentObject private var updates: UpdateManager
     @AppStorage("allowAppleCloud") private var allowAppleCloud = false
     @AppStorage("aiProvider") private var providerRaw = AIProvider.none.rawValue
     @AppStorage("aiModel") private var selectedModel = "qwen3:4b"
@@ -40,10 +41,28 @@ struct StudioSettings: View {
                 }
             }
             Divider()
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Обновления").font(.headline)
+                Toggle("Проверять обновления при запуске", isOn: $updates.autoCheck)
+                HStack {
+                    Button("Проверить обновления") { Task { await updates.check() } }
+                    if updates.hasUpdate {
+                        Button("Установить \(updates.release?.tagName ?? "")") {
+                            Task { await updates.install() }
+                        }.disabled(!updates.canInstall || updates.installing)
+                    }
+                }
+                if let message = updates.statusMessage {
+                    Text(message).font(.caption).foregroundStyle(.secondary)
+                }
+                Text("Проверка публичных GitHub Releases без авторизации. Для установки релиз должен содержать ZIP и SHA256SUMS.txt. Обновления пока экспериментальные, без подписи разработчика.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Divider()
             HStack {
                 Button("Показать локальные записи") { studio.showFolder() }
                 Spacer()
-                Text("v0.5.1 · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("v0.6.1 · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(28).frame(width: 575)
