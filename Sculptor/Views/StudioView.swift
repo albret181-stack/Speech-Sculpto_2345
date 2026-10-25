@@ -347,12 +347,18 @@ struct StudioView: View {
     }
 
     private var captureWaveform: some View {
-        HStack(alignment: .center, spacing: 3) {
-            ForEach(0..<58, id: \.self) { idx in
-                Capsule()
-                    .fill(Design.main.opacity(Double(5 + (idx * 19) % 13) / 20.0))
-                    .frame(maxWidth: .infinity)
-                    .frame(height: CGFloat(8 + (idx * 29 + idx * idx * 3) % 54))
+        Canvas { context, size in
+            let count = 58
+            let spacing: CGFloat = 3
+            let barWidth = max(1, (size.width - CGFloat(count - 1) * spacing) / CGFloat(count))
+            for index in 0..<count {
+                let height = CGFloat(8 + (index * 29 + index * index * 3) % 54)
+                let x = CGFloat(index) * (barWidth + spacing)
+                let rect = CGRect(x: x, y: (size.height - height) / 2,
+                                  width: barWidth, height: height)
+                let alpha = Double(5 + (index * 19) % 13) / 20
+                let bar = Path(roundedRect: rect, cornerRadius: barWidth / 2)
+                context.fill(bar, with: .color(Design.main.opacity(alpha)))
             }
         }
         .frame(height: 70)
