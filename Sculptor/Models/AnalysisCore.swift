@@ -86,7 +86,7 @@ enum Scoring {
 
     static func makeReport(text: String, segments: [SpeechSegment], duration: Double, acoustic: AcousticValues) -> SpeechReport {
         let count = countWords(text)
-        let breakdown = fillers(text)
+        let breakdown = SpeechContext.likelyBreakdown(text, segments: segments)
         let fillers = breakdown.values.reduce(0, +)
         let elapsed = acoustic.speechSeconds > 0 ? acoustic.speechSeconds : duration
         let wpm = count > 0 && elapsed > 0 ? Double(count) / elapsed * 60 : 0
@@ -104,7 +104,7 @@ enum Scoring {
             issues.append(Issue(kind: "filler", heading: "Повторяющиеся вводные слова", evidence: summary,
                                 explanation: "Часть выражений может быть уместной. Послушай отмеченные слова и попробуй заменить ненужные короткой паузой.",
                                 exercise: "За 45 секунд объясни одну мысль, сознательно заменяя лишние «ну» и «вот» паузами.",
-                                timestamp: findFirstFiller(in: segments)))
+                                timestamp: SpeechContext.analyze(text, segments: segments).first(where: { $0.interpretation == .possibleFiller })?.timestamp))
         }
         let sentences = text.split(whereSeparator: { ".!?…".contains($0) })
         if let longest = sentences.max(by: { countWords(String($0)) < countWords(String($1)) }), countWords(String(longest)) >= 38 {
@@ -131,6 +131,7 @@ enum Scoring {
         let ranked = Array(issues.prefix(3))
         var caveats = ["Автоматические замечания — подсказки для тренировки, не объективная оценка личности или дикции."]
         if acoustic.pitchSamples < 15 { caveats.append("Недостаточно надёжных голосовых участков для оценки интонации.") }
+        caveats.append("Контекстная классификация выражений вероятностная: без ручной проверки возможны ошибки.")
         caveats.append("Для разговора с несколькими людьми метрики могут включать реплики собеседников. Разделение голосов пока не реализовано.")
         let verdict: String
         if rate > 5 { verdict = "Стоит поработать над вводными словами и ясностью формулировок." }
