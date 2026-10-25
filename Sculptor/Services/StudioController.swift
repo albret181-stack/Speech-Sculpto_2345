@@ -14,6 +14,13 @@ final class StudioController: ObservableObject {
     @Published var message: String?
     @Published var currentIsPractice = false
     @Published var aiBusy = false
+    @Published var batchActive = false
+    @Published var batchTotal = 0
+    @Published var batchProcessed = 0
+    @Published var batchSucceeded = 0
+    @Published var batchCurrentFile = ""
+    @Published var batchSummary = ""
+
 
     private let store = SessionStore.shared
     private var recorder: AVAudioRecorder?
@@ -96,33 +103,98 @@ final class StudioController: ObservableObject {
         return id
     }
 
-    func importAudio(_ url: URL) async {
-        guard !isRecording && !isBusy else { return }
-        isBusy = true
-        defer { isBusy = false }
+    enum ImportError: LocalizedError {
+        case unsupportedExtension
+        var errorDescription: String? {
+            "Поддерживаются M4A, MP3, WAV, CAF и AIFF."
+        }
+    }
+
+    private func importSingle(_ url: URL) async throws -> UUID {
         let access = url.startAccessingSecurityScopedResource()
         defer { if access { url.stopAccessingSecurityScopedResource() } }
         let ext = url.pathExtension.lowercased()
         guard ["m4a", "mp3", "wav", "caf", "aiff", "aif"].contains(ext) else {
-            message = "Поддерживаются M4A, MP3, WAV, CAF и AIFF."
-            return
+            throw ImportError.unsupportedExtension
         }
+        let id = UUID()
+        let destination = try store.newAudioURL(id, ext: ext)
         do {
-            let id = UUID()
-            let destination = try store.newAudioURL(id, ext: ext)
             try FileManager.default.copyItem(at: url, to: destination)
             let asset = AVURLAsset(url: destination)
             let duration = (try? await asset.load(.duration).seconds) ?? 0
-            let item = SpeechSession(id: id,
-                                     title: url.deletingPathExtension().lastPathComponent,
-                                     createdAt: Date(), duration: max(0, duration),
-                                     relativeAudioPath: "Recordings/\(id.uuidString)/audio.\(ext)",
-                                     isPractice: false, report: nil)
-            sessions.insert(item, at: 0)
+            let item = SpeechSession(
+                id: id,
+                title: url.deletingPathExtension().lastPathComponent,
+                createdAt: Date(), duration: duration.isFinite ? max(0, duration) : 0,
+                relativeAudioPath: "Recordings/\(id.uuidString)/audio.\(ext)",
+                isPractice: false, report: nil
+            )
+            let updated = [item] + sessions
+            try store.save(updated)
+            sessions = updated
             selectedID = id
-            try store.save(sessions)
+            return id
+        } catch {
+            // Don't leave half-imported recordings after a failed file copy or metadata write.
+            try? FileManager.default.removeItem(at: destination.deletingLastPathComponent())
+            throw error
+        }
+    }
+
+    func importAudio(_ url: URL) async {
+        guard !isRecording && !isBusy && processingID == nil else { return }
+        isBusy = true
+        defer { isBusy = false }
+        do {
+            _ = try await importSingle(url)
             message = "Файл импортирован. Нажми «Анализировать», чтобы получить разбор."
-        } catch { message = "Не удалось импортировать файл: \(error.localizedDescription)" }
+        } catch {
+            message = "Не удалось импортировать файл: \(error.localizedDescription)"
+        }
+    }
+
+    /// Imports and analyzes many files one by one. A failed file cannot stop the rest.
+    /// Only one analysis runs at a time to avoid microphone/speech-recognizer conflicts.
+    func importBatch(_ urls: [URL], allowAppleCloud: Bool) async {
+        guard !urls.isEmpty, !isRecording, !isBusy, processingID == nil else { return }
+        isBusy = true
+        batchActive = true
+        batchTotal = urls.count
+        batchProcessed = 0
+        batchSucceeded = 0
+        batchCurrentFile = ""
+        batchSummary = ""
+        message = nil
+        var failures: [String] = []
+        defer {
+            batchActive = false
+            isBusy = false
+            batchCurrentFile = ""
+        }
+
+        for url in urls {
+            let name = url.lastPathComponent
+            batchCurrentFile = name
+            do {
+                let id = try await importSingle(url)
+                await analyze(id, allowAppleCloud: allowAppleCloud)
+                if sessions.first(where: { $0.id == id })?.report != nil {
+                    batchSucceeded += 1
+                } else {
+                    failures.append("\(name): ошибка анализа")
+                }
+            } catch {
+                failures.append("\(name): \(error.localizedDescription)")
+            }
+            batchProcessed += 1
+        }
+        let errors = failures.count
+        batchSummary = "Обработано: \(batchSucceeded) из \(batchTotal). Ошибок: \(errors)."
+        if !failures.isEmpty {
+            batchSummary += " Проблемные файлы: " + failures.prefix(3).joined(separator: "; ")
+            if failures.count > 3 { batchSummary += " и ещё \(failures.count - 3)." }
+        }
     }
 
     func analyze(_ id: UUID, allowAppleCloud: Bool) async {
@@ -151,8 +223,8 @@ final class StudioController: ObservableObject {
                 sessions[idx].report = report
                 try store.save(sessions)
             }
-            if let warning { message = warning }
-        } catch { message = "Не удалось обработать аудио: \(error.localizedDescription)" }
+            if let warning, !batchActive { message = warning }
+        } catch { if !batchActive { message = "Не удалось обработать аудио: \(error.localizedDescription)" } }
     }
 
     func saveAI(_ id: UUID, value: String) {
