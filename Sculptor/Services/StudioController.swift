@@ -27,6 +27,7 @@ final class StudioController: ObservableObject {
     private var timer: Timer?
     private var startTime: Date?
     private var pendingID: UUID?
+    private var pendingLessonID: String?
 
     var selected: SpeechSession? { sessions.first(where: { $0.id == selectedID }) }
     var totalRecordings: Int { sessions.filter { !$0.isPractice }.count }
@@ -34,7 +35,7 @@ final class StudioController: ObservableObject {
     var completedLessons: Int { sessions.filter { $0.isPractice && ($0.report?.metrics.words ?? 0) > 0 }.count }
     var latestReport: SpeechReport? { sessions.first(where: { !$0.isPractice && $0.report != nil })?.report }
 
-    func start(practice: Bool = false) async {
+    func start(practice: Bool = false, lessonID: String? = nil) async {
         guard !isRecording && !isBusy else { return }
         isBusy = true
         defer { isBusy = false }
@@ -62,6 +63,7 @@ final class StudioController: ObservableObject {
             recorder = audio
             pendingID = id
             currentIsPractice = practice
+            pendingLessonID = practice ? lessonID : nil
             startTime = Date()
             elapsed = 0
             isRecording = true
@@ -86,7 +88,7 @@ final class StudioController: ObservableObject {
         recorder = nil
         isRecording = false
         elapsed = 0
-        defer { pendingID = nil; startTime = nil }
+        defer { pendingID = nil; startTime = nil; pendingLessonID = nil }
         guard let id = pendingID else { return nil }
         let isPractice = currentIsPractice
         let session = SpeechSession(
@@ -98,8 +100,12 @@ final class StudioController: ObservableObject {
         )
         sessions.insert(session, at: 0)
         selectedID = id
-        do { try store.save(sessions) }
-        catch { message = "Запись сохранена, но индекс не записан: \(error.localizedDescription)" }
+        do {
+            try store.save(sessions)
+            if isPractice, let lesson = pendingLessonID {
+                _ = CoachingStore.shared.link(sessionID: id, to: lesson)
+            }
+        } catch { message = "Запись сохранена, но индекс не записан: \(error.localizedDescription)" }
         return id
     }
 
