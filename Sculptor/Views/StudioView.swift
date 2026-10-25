@@ -133,7 +133,7 @@ struct StudioView: View {
             Rectangle().fill(Design.stroke).frame(height: 1)
             Text("Личная студия")
                 .font(.system(size: 11, weight: .bold)).foregroundStyle(Design.main)
-            Text("v0.6 · macOS")
+            Text("v0.6.1 · macOS")
                 .font(.system(size: 10)).foregroundStyle(Design.subtle)
         }
         .padding(16)
