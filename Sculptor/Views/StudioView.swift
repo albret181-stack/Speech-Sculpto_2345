@@ -4,15 +4,19 @@ import UniformTypeIdentifiers
 
 private enum Design {
     // Monochrome Studio — quietly warm grays, strong typographic hierarchy.
-    static let bg = Color(hex: 0xE7EEE9)
-    static let side = Color(hex: 0xF8FAF7)
+    static let bg = Color(hex: 0xF4F6FB)
+    static let side = Color(hex: 0xEDF1F9)
     static let panel = Color(hex: 0xFFFFFF)
-    static let panel2 = Color(hex: 0xEFF5EF)
-    static let main = Color(hex: 0x164B3C)
-    static let subtle = Color(hex: 0x627A70)
-    static let acid = Color(hex: 0x206F54)
-    static let stroke = Color(hex: 0xD4E3D9)
+    static let panel2 = Color(hex: 0xE8F0F8)
+    static let main = Color(hex: 0x283348)
+    static let subtle = Color(hex: 0x62728A)
+    static let acid = Color(hex: 0x5075BE)
+    static let stroke = Color(hex: 0xDAE2EF)
     static let inverse = Color.white
+    static let mutedBlue = Color(hex: 0xDCEAF6)
+    static let lavender = Color(hex: 0xE9E7F7)
+    static let softTeal = Color(hex: 0xDDF0F1)
+    static let deep = Color(hex: 0x374967)
 }
 
 extension Color {
@@ -133,12 +137,12 @@ struct StudioView: View {
             Rectangle().fill(Design.stroke).frame(height: 1)
             Text("Личная студия")
                 .font(.system(size: 11, weight: .bold)).foregroundStyle(Design.main)
-            Text("v0.6.1 · macOS")
+            Text("v0.6.3 · macOS")
                 .font(.system(size: 10)).foregroundStyle(Design.subtle)
         }
         .padding(16)
-        .frame(width: 181)
-        .background(Design.side, in: RoundedRectangle(cornerRadius: 23))
+        .frame(width: 211)
+        .background(Design.side, in: RoundedRectangle(cornerRadius: 16))
         .padding(.leading, 12)
         .padding(.vertical, 12)
     }
@@ -208,7 +212,7 @@ struct StudioView: View {
             HStack(alignment: .bottom, spacing: 20) {
                 VStack(alignment: .leading, spacing: 8) {
                     sectionTitle("ЛИЧНОЕ ПРОСТРАНСТВО / СТУДИЯ")
-                    Text("Мастерская голоса")
+                    Text("Мастерская речи")
                         .font(.system(size: 41, weight: .semibold, design: .rounded))
                         .tracking(-1.9)
                         .foregroundStyle(Design.main)
@@ -232,7 +236,7 @@ struct StudioView: View {
                     progressPanel
                     practiceSpotlight
                 }
-                .frame(width: 275)
+                .frame(width: 300)
             }
         }
     }
@@ -259,7 +263,7 @@ struct StudioView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Design.side, in: RoundedRectangle(cornerRadius: 21))
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var progressPanel: some View {
@@ -294,12 +298,12 @@ struct StudioView: View {
         }
         .padding(22)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Design.panel, in: RoundedRectangle(cornerRadius: 22))
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
     }
 
     private var practiceSpotlight: some View {
         ZStack(alignment: .topLeading) {
-            RoundedRectangle(cornerRadius: 22).fill(Design.main)
+            RoundedRectangle(cornerRadius: 18).fill(Design.deep)
             Circle()
                 .stroke(Color.white.opacity(0.08), lineWidth: 1)
                 .frame(width: 230, height: 230)
@@ -328,7 +332,7 @@ struct StudioView: View {
             .padding(22)
         }
         .frame(height: 245)
-        .clipShape(RoundedRectangle(cornerRadius: 22))
+        .clipShape(RoundedRectangle(cornerRadius: 18))
     }
 
     private var capturePanel: some View {
@@ -344,7 +348,7 @@ struct StudioView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             LinearGradient(
-                colors: [Design.panel, Design.panel2, Design.bg],
+                colors: [Design.panel, Design.softTeal.opacity(0.6), Design.mutedBlue.opacity(0.5)],
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             ),
