@@ -11,11 +11,19 @@ struct AudioPipelineRegression {
 
         for path in CommandLine.arguments.dropFirst() {
             let source = URL(fileURLWithPath: path)
+            print("TEST SOURCE \(source.lastPathComponent)")
+            fflush(stdout)
             let before = SHA256.hash(data: try Data(contentsOf: source))
-            let prepared = try await AudioPreparation.makeAnalysisCopy(from: source)
+            let prepared: URL
+            do { prepared = try await AudioPreparation.makeAnalysisCopy(from: source) }
+            catch { print("FAILED PREPARE \(source.lastPathComponent): \(error)"); throw error }
+            print("PREPARED \(source.lastPathComponent)")
+            fflush(stdout)
             defer { try? FileManager.default.removeItem(at: prepared) }
 
-            let audio = try AVAudioFile(forReading: prepared)
+            let audio: AVAudioFile
+            do { audio = try AVAudioFile(forReading: prepared) }
+            catch { print("FAILED OPEN CAF \(source.lastPathComponent): \(error)"); throw error }
             guard audio.length > 0 else { fatalError("Decoded file empty: \(path)") }
             guard abs(audio.processingFormat.sampleRate - 16000) < 1 else {
                 fatalError("Sample rate not normalized: \(path)")
@@ -29,7 +37,9 @@ struct AudioPipelineRegression {
                 fatalError("Cannot read float samples: \(path)")
             }
             // Also exercise the exact acoustic analyzer used in the app.
-            let result = try AudioAnalyzer.inspect(prepared)
+            let result: AcousticValues
+            do { result = try AudioAnalyzer.inspect(prepared) }
+            catch { print("FAILED ACOUSTICS \(source.lastPathComponent): \(error)"); throw error }
             guard result.speechSeconds >= 0 else { fatalError("Invalid analyzer output") }
             let after = SHA256.hash(data: try Data(contentsOf: source))
             guard before == after else { fatalError("Source was modified: \(path)") }
