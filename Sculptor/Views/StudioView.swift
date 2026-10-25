@@ -3,14 +3,16 @@ import AVFoundation
 import UniformTypeIdentifiers
 
 private enum Design {
-    static let bg = Color(hex: 0xFAF6F4)
-    static let side = Color(hex: 0xF2E5E8)
+    // Monochrome Studio — quietly warm grays, strong typographic hierarchy.
+    static let bg = Color(hex: 0xEDEDEB)
+    static let side = Color(hex: 0xFBFBFA)
     static let panel = Color(hex: 0xFFFFFF)
-    static let panel2 = Color(hex: 0xF8E9E9)
-    static let main = Color(hex: 0x372C35)
-    static let subtle = Color(hex: 0x796A72)
-    static let acid = Color(hex: 0xA44E73)
-    static let stroke = Color(hex: 0xE3D3D8)
+    static let panel2 = Color(hex: 0xF4F4F2)
+    static let main = Color(hex: 0x191B1C)
+    static let subtle = Color(hex: 0x707474)
+    static let acid = Color(hex: 0x161718)
+    static let stroke = Color(hex: 0xDEDEDA)
+    static let inverse = Color.white
 }
 
 extension Color {
@@ -62,9 +64,9 @@ struct StudioView: View {
                     case .history: history
                     }
                 }
-                .padding(.horizontal, 43)
-                .padding(.vertical, 35)
-                .frame(maxWidth: 1130, alignment: .leading)
+                .padding(.horizontal, 30)
+                .padding(.vertical, 28)
+                .frame(maxWidth: 1250, alignment: .leading)
                 .frame(maxWidth: .infinity)
             }
             .background(Design.bg)
@@ -86,128 +88,244 @@ struct StudioView: View {
         } message: { Text("Восстановить удалённый аудиофайл будет невозможно.") }
     }
 
+
     private var navigation: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 9) {
                 ZStack {
-                    RoundedRectangle(cornerRadius: 12).fill(Design.acid).frame(width: 38, height: 38)
-                    Image(systemName: "waveform").foregroundStyle(Design.bg).font(.title3.weight(.bold))
+                    RoundedRectangle(cornerRadius: 11).fill(Design.main).frame(width: 34, height: 34)
+                    Image(systemName: "waveform").foregroundStyle(Design.inverse)
+                        .font(.system(size: 15, weight: .semibold))
                 }
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("скульптор").font(.system(size: 17, weight: .bold))
-                    Text("речи").font(.system(size: 15, weight: .semibold)).foregroundStyle(Design.acid)
-                }
-            }.padding(.bottom, 45)
-            Text("СТУДИЯ").font(.system(size: 10, weight: .bold)).tracking(2.3).foregroundStyle(Design.subtle).padding(.horizontal, 12)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("скульптор").font(.system(size: 12, weight: .bold))
+                    Text("речи.").font(.system(size: 12, weight: .bold))
+                }.foregroundStyle(Design.main)
+            }
+            .padding(.horizontal, 10).padding(.top, 9).padding(.bottom, 50)
+
             ForEach(StudioPage.allCases, id: \.self) { item in
                 Button { page = item } label: {
-                    HStack(spacing: 13) {
-                        Image(systemName: item.symbol).frame(width: 24)
+                    HStack(spacing: 10) {
+                        Image(systemName: item.symbol).frame(width: 18)
                         Text(item.rawValue)
-                        Spacer()
+                        Spacer(minLength: 0)
                     }
-                    .font(.system(size: 14, weight: page == item ? .semibold : .medium))
-                    .foregroundStyle(page == item ? Design.acid : Design.subtle)
-                    .padding(.horizontal, 12).padding(.vertical, 12)
-                    .background(page == item ? Design.panel : Color.clear, in: RoundedRectangle(cornerRadius: 12))
+                    .font(.system(size: 12, weight: page == item ? .bold : .medium))
+                    .foregroundStyle(page == item ? Design.inverse : Design.main)
+                    .padding(.horizontal, 13).padding(.vertical, 12)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .background(page == item ? Design.main : Color.clear,
+                                in: Capsule())
                 }.buttonStyle(.plain)
             }
             Spacer()
             Button { showPreferences = true } label: {
-                Label("Настройки ИИ", systemImage: "slider.horizontal.3")
-                    .font(.system(size: 13)).foregroundStyle(Design.subtle)
+                Label("Настройки ИИ", systemImage: "gearshape")
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Design.subtle)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }.buttonStyle(.plain)
-            Text("v0.3 · локально по умолчанию")
-                .font(.system(size: 10)).foregroundStyle(Design.subtle.opacity(0.68)).padding(.horizontal, 12)
+            Rectangle().fill(Design.stroke).frame(height: 1)
+            Text("Личная студия")
+                .font(.system(size: 11, weight: .bold)).foregroundStyle(Design.main)
+            Text("v0.5 · macOS")
+                .font(.system(size: 10)).foregroundStyle(Design.subtle)
         }
-        .padding(20)
-        .frame(width: 235)
-        .background(Design.side)
-        .overlay(alignment: .trailing) { Rectangle().fill(Design.stroke.opacity(0.5)).frame(width: 1) }
+        .padding(16)
+        .frame(width: 181)
+        .background(Design.side, in: RoundedRectangle(cornerRadius: 23))
+        .padding(.leading, 12)
+        .padding(.vertical, 12)
     }
 
     private var header: some View {
         HStack(alignment: .center) {
-            Text(page.rawValue.uppercased())
-                .font(.system(size: 11, weight: .semibold)).tracking(3.0)
-                .foregroundStyle(Design.subtle)
-            Spacer()
-            HStack(spacing: 7) {
-                Circle().fill(studio.isRecording ? Color.red : Design.acid).frame(width: 7, height: 7)
-                Text(studio.isRecording ? "ИДЁТ ЗАПИСЬ" : "ГОТОВО К ЗАПИСИ")
-                    .font(.system(size: 10, weight: .bold)).tracking(1.0)
-                    .foregroundStyle(Design.subtle)
+            HStack(spacing: 5) {
+                Circle().fill(Design.subtle.opacity(0.5)).frame(width: 6, height: 6)
+                Circle().fill(Design.subtle.opacity(0.5)).frame(width: 6, height: 6)
+                Circle().fill(Design.subtle.opacity(0.5)).frame(width: 6, height: 6)
             }
+            Spacer()
+            HStack(spacing: 8) {
+                Image(systemName: "mic.fill")
+                    .font(.system(size: 10))
+                    .frame(width: 25, height: 25)
+                    .foregroundStyle(Design.inverse)
+                    .background(Design.main, in: Circle())
+                Text(studio.isRecording ? "Микрофон · запись" : "Микрофон · готов")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundStyle(Design.main)
+            .padding(.horizontal, 11).padding(.vertical, 6)
+            .background(Design.panel, in: Capsule())
+            HStack(spacing: 6) {
+                Image(systemName: "lock.shield")
+                Text("Локальное хранение")
+            }
+            .font(.system(size: 10, weight: .medium))
+            .foregroundStyle(Design.subtle)
+            .padding(.horizontal, 12).padding(.vertical, 10)
+            .background(Design.panel, in: Capsule())
         }
     }
 
     private var home: some View {
-        VStack(alignment: .leading, spacing: 24) {
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 10) {
-                    Text("Твой голос.\nТвоя форма.")
-                        .font(.system(size: 48, weight: .bold, design: .rounded)).tracking(-2.2)
+        VStack(alignment: .leading, spacing: 20) {
+            HStack(alignment: .bottom, spacing: 20) {
+                VStack(alignment: .leading, spacing: 8) {
+                    sectionTitle("ЛИЧНОЕ ПРОСТРАНСТВО / СТУДИЯ")
+                    Text("Мастерская голоса")
+                        .font(.system(size: 41, weight: .semibold, design: .rounded))
+                        .tracking(-1.9)
                         .foregroundStyle(Design.main)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Записывай, замечай привычки и тренируй выразительность.")
-                        .font(.system(size: 15)).foregroundStyle(Design.subtle)
+                    Text("Замечай речевые привычки. Управляй подачей. Говори свободнее.")
+                        .font(.system(size: 13)).foregroundStyle(Design.subtle)
                 }
-                Spacer()
+                Spacer(minLength: 0)
             }
-            HStack(spacing: 12) {
-                stat("ЗАПИСЕЙ", value: "\(studio.totalRecordings)", symbol: "mic")
-                stat("СЛОВ-ПАРАЗИТОВ", value: "\(studio.totalFillers)", symbol: "quote.bubble")
-                stat("УРОКОВ ЗАВЕРШЕНО", value: "\(studio.completedLessons)", symbol: "graduationcap")
-            }
-            capturePanel
             HStack(alignment: .top, spacing: 18) {
-                VStack(alignment: .leading, spacing: 14) {
-                    sectionTitle("ПОСЛЕДНИЕ ЗАПИСИ")
-                    if studio.sessions.filter({ !$0.isPractice }).isEmpty {
-                        Text("Пока нет записей. Начни с короткого рассказа на 1–2 минуты.")
-                            .font(.system(size: 14)).foregroundStyle(Design.subtle)
-                            .padding(.vertical, 20)
-                    } else {
-                        ForEach(studio.sessions.filter({ !$0.isPractice }).prefix(4)) { session in
-                            sessionRow(session)
-                        }
+                VStack(alignment: .leading, spacing: 17) {
+                    capturePanel
+                    HStack(spacing: 12) {
+                        stat("ЗАПИСЕЙ", value: "\(studio.totalRecordings)", symbol: "mic")
+                        stat("СЛОВ-ПАРАЗИТОВ", value: "\(studio.totalFillers)", symbol: "quote.bubble")
+                        stat("УРОКОВ", value: "\(studio.completedLessons)", symbol: "graduationcap")
                     }
-                }.frame(maxWidth: .infinity, alignment: .leading)
-                VStack(alignment: .leading, spacing: 15) {
-                    sectionTitle("СЛЕДУЮЩИЙ ШАГ")
-                    Image(systemName: "waveform.path")
-                        .font(.system(size: 29)).foregroundStyle(Design.acid)
-                    Text(studio.latestReport?.issues.first?.heading ?? "Первый разбор")
-                        .font(.system(size: 18, weight: .semibold)).foregroundStyle(Design.main)
-                    Text("Одна цель. Одно короткое упражнение. Сравнение результата.")
-                        .font(.system(size: 12)).foregroundStyle(Design.subtle)
-                    Button("Перейти к практике →") { page = .training }
-                        .buttonStyle(.plain).font(.system(size: 13, weight: .semibold)).foregroundStyle(Design.acid)
+                    recentRecordings
                 }
-                .padding(20)
-                .frame(maxWidth: 280, alignment: .leading)
-                .background(Design.panel, in: RoundedRectangle(cornerRadius: 18))
+                .frame(maxWidth: .infinity, alignment: .leading)
+                VStack(alignment: .leading, spacing: 17) {
+                    progressPanel
+                    practiceSpotlight
+                }
+                .frame(width: 275)
             }
         }
     }
 
-    private var capturePanel: some View {
-        VStack(alignment: .leading, spacing: 18) {
-            HStack(alignment: .center, spacing: 24) {
-                VStack(alignment: .leading, spacing: 8) {
-                    sectionTitle(studio.currentIsPractice && studio.isRecording ? "УПРАЖНЕНИЕ" : "НОВАЯ ЗАПИСЬ")
-                    Text(studio.isRecording ? "Микрофон записывает" : "Начни, когда будешь готов")
-                        .font(.system(size: 23, weight: .semibold)).foregroundStyle(Design.main)
-                    Text("Очный разговор или свободный рассказ. Звук хранится на Mac.")
-                        .font(.system(size: 13)).foregroundStyle(Design.subtle)
-                }
+    private var recentRecordings: some View {
+        VStack(alignment: .leading, spacing: 13) {
+            HStack {
+                Text("Последние записи")
+                    .font(.system(size: 16, weight: .semibold)).foregroundStyle(Design.main)
                 Spacer()
-                Image(systemName: "waveform")
-                    .font(.system(size: 69, weight: .ultraLight)).foregroundStyle(Design.acid)
+                Button("Вся история ↗") { page = .history }
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(Design.subtle)
+                    .buttonStyle(.plain)
             }
-            HStack(spacing: 12) {
+            let recent = studio.sessions.filter { !$0.isPractice }
+            if recent.isEmpty {
+                Text("Здесь появятся первые записи. Начни с рассказа на 1–2 минуты.")
+                    .font(.system(size: 13)).foregroundStyle(Design.subtle)
+                    .frame(maxWidth: .infinity, minHeight: 66, alignment: .leading)
+            } else {
+                ForEach(recent.prefix(3)) { session in sessionRow(session) }
+            }
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Design.side, in: RoundedRectangle(cornerRadius: 21))
+    }
+
+    private var progressPanel: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            sectionTitle("ПРОГРЕСС / РЕЧЬ")
+            Text("Чистота речи")
+                .font(.system(size: 19, weight: .semibold)).foregroundStyle(Design.main)
+            Text("Слова-паразиты на 100 слов")
+                .font(.system(size: 11)).foregroundStyle(Design.subtle)
+            let history = Array(studio.sessions.filter { !$0.isPractice }
+                                .compactMap { $0.report?.metrics.fillersPer100 }
+                                .prefix(7).reversed())
+            if let last = history.last {
+                Text(String(format: "%.1f", last).replacingOccurrences(of: ".", with: ","))
+                    .font(.system(size: 41, weight: .semibold))
+                    .tracking(-1.6).foregroundStyle(Design.main)
+                SpeechTrend(values: history)
+                    .frame(height: 62)
+            } else {
+                Text("—").font(.system(size: 41)).foregroundStyle(Design.main)
+                Text("Появится после первого анализа.")
+                    .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                    .frame(height: 62, alignment: .center)
+            }
+            Rectangle().fill(Design.stroke).frame(height: 1)
+            let issue = studio.latestReport?.issues.first
+            Text(issue.map { "В фокусе: \($0.heading)" } ?? "Следующий шаг: первый разбор")
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(Design.main).lineLimit(2)
+            Text("Сравнивай сопоставимые записи, а не только суммы.")
+                .font(.system(size: 10)).foregroundStyle(Design.subtle).fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(22)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var practiceSpotlight: some View {
+        ZStack(alignment: .topLeading) {
+            RoundedRectangle(cornerRadius: 22).fill(Design.main)
+            Circle()
+                .stroke(Color.white.opacity(0.08), lineWidth: 1)
+                .frame(width: 230, height: 230)
+                .offset(x: 116, y: -85)
+            Circle()
+                .stroke(Color.white.opacity(0.10), lineWidth: 1)
+                .frame(width: 170, height: 170)
+                .offset(x: 147, y: -54)
+            VStack(alignment: .leading, spacing: 11) {
+                Text("СЛЕДУЮЩИЙ УРОК / 02")
+                    .font(.system(size: 10, weight: .bold))
+                    .tracking(1.1).foregroundStyle(Color.white.opacity(0.65))
+                Spacer(minLength: 30)
+                Text(studio.latestReport?.issues.first?.heading ?? "Научись выделять главную мысль")
+                    .font(.system(size: 20, weight: .medium))
+                    .foregroundStyle(.white).lineLimit(3)
+                Text("Одна цель, короткая тренировка и повторная запись.")
+                    .font(.system(size: 11)).foregroundStyle(Color.white.opacity(0.72))
+                Button("Перейти к практике ↗") { page = .training }
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(Design.main)
+                    .padding(.horizontal, 14).padding(.vertical, 11)
+                    .background(Design.panel, in: Capsule())
+                    .buttonStyle(.plain)
+            }
+            .padding(22)
+        }
+        .frame(height: 245)
+        .clipShape(RoundedRectangle(cornerRadius: 22))
+    }
+
+    private var capturePanel: some View {
+        VStack(alignment: .leading, spacing: 17) {
+            HStack {
+                sectionTitle("НОВАЯ ЗАПИСЬ / 01")
+                Spacer()
+                Text(studio.isRecording ? "● Идёт запись" : "● Готово к записи")
+                    .font(.system(size: 10, weight: .medium))
+                    .padding(.horizontal, 11).padding(.vertical, 7)
+                    .background(Design.panel, in: Capsule())
+            }
+            Text(studio.isRecording ? "Записываем твой голос." : "Начни с голоса.\nОстальное — за нами.")
+                .font(.system(size: 27, weight: .semibold, design: .rounded))
+                .tracking(-0.9).foregroundStyle(Design.main)
+                .fixedSize(horizontal: false, vertical: true)
+            Text("Разговор или свободный рассказ. Запись и результаты останутся на Mac.")
+                .font(.system(size: 12)).foregroundStyle(Design.subtle)
+            HStack(alignment: .center, spacing: 3) {
+                ForEach(0..<58, id: \.self) { idx in
+                    Capsule()
+                        .fill(Design.main.opacity(0.25 + Double((idx * 19) % 13) / 19.0))
+                        .frame(maxWidth: .infinity)
+                        .frame(height: CGFloat(8 + (idx * 29 + idx * idx * 3) % 54))
+                }
+            }
+            .frame(height: 70)
+            .accessibilityLabel("Декоративная звуковая волна, не сигнал микрофона")
+            HStack(spacing: 10) {
                 Button {
                     Task {
                         if studio.isRecording {
@@ -218,23 +336,32 @@ struct StudioView: View {
                         } else { await studio.start() }
                     }
                 } label: {
-                    Label(studio.isRecording ? "Завершить и разобрать" : "Начать запись", systemImage: studio.isRecording ? "stop.fill" : "record.circle")
-                        .frame(minWidth: 190)
+                    Label(studio.isRecording ? "Завершить и разобрать" : "Начать запись",
+                          systemImage: studio.isRecording ? "stop.fill" : "record.circle")
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(studio.isBusy || studio.processingID != nil)
-                Button { showImport = true } label: { Label("Загрузить аудиофайлы", systemImage: "square.and.arrow.down.on.square") }
-                    .buttonStyle(OutlineButtonStyle())
-                    .disabled(studio.isRecording)
-                Spacer()
+                Button { showImport = true } label: {
+                    Label("Загрузить аудиофайлы", systemImage: "square.and.arrow.down.on.square")
+                }
+                .buttonStyle(OutlineButtonStyle())
+                .disabled(studio.isRecording || studio.isBusy)
+                Spacer(minLength: 0)
                 Text(studio.isRecording ? timeString(studio.elapsed) : "00:00")
-                    .font(.system(size: 24, weight: .medium, design: .monospaced)).foregroundStyle(Design.main)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundStyle(Design.main)
             }
-            Text("Перед записью диалога предупреди собеседников и получи необходимые разрешения.")
-                .font(.system(size: 11)).foregroundStyle(Design.subtle)
+            Text("Перед записью разговора предупреди других участников.")
+                .font(.system(size: 10)).foregroundStyle(Design.subtle)
         }
         .padding(25)
-        .background(Design.panel, in: RoundedRectangle(cornerRadius: 22))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(
+            LinearGradient(colors: [Design.panel, Design.panel2, Design.bg],
+                           startPoint: .topLeading, endPoint: .bottomTrailing),
+            in: RoundedRectangle(cornerRadius: 23)
+        )
+        .overlay(RoundedRectangle(cornerRadius: 23).stroke(Color.white.opacity(0.85), lineWidth: 1))
     }
 
     private var analysis: some View {
@@ -506,12 +633,24 @@ struct StudioView: View {
     }
 
     private func stat(_ label: String, value: String, symbol: String) -> some View {
-        VStack(alignment: .leading, spacing: 17) {
-            HStack { Text(label).font(.system(size: 10, weight: .semibold)).tracking(1).foregroundStyle(Design.subtle); Spacer(); Image(systemName: symbol).foregroundStyle(Design.acid) }
-            Text(value).font(.system(size: 39, weight: .semibold, design: .rounded)).foregroundStyle(Design.main).monospacedDigit()
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text(label).font(.system(size: 10, weight: .bold))
+                    .tracking(0.5).foregroundStyle(Design.subtle)
+                Spacer(minLength: 2)
+                Image(systemName: symbol)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Design.main)
+                    .frame(width: 25, height: 25)
+                    .overlay(Circle().stroke(Design.stroke, lineWidth: 1))
+            }
+            Text(value)
+                .font(.system(size: 35, weight: .semibold, design: .rounded))
+                .tracking(-1.5).foregroundStyle(Design.main)
+                .monospacedDigit()
         }
         .padding(18).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Design.panel, in: RoundedRectangle(cornerRadius: 15))
+        .background(Design.panel, in: RoundedRectangle(cornerRadius: 20))
     }
     private func metric(_ title: String, _ value: String, _ explanation: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -558,9 +697,9 @@ private struct PrimaryButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .font(.system(size: 13, weight: .bold))
-            .foregroundStyle(Design.bg)
-            .padding(.horizontal, 20).padding(.vertical, 13)
-            .background(Design.acid.opacity(configuration.isPressed ? 0.74 : 1), in: RoundedRectangle(cornerRadius: 11))
+            .foregroundStyle(Design.inverse)
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .background(Design.main.opacity(configuration.isPressed ? 0.77 : 1), in: Capsule())
     }
 }
 private struct OutlineButtonStyle: ButtonStyle {
@@ -568,6 +707,40 @@ private struct OutlineButtonStyle: ButtonStyle {
         configuration.label.font(.system(size: 13, weight: .semibold))
             .foregroundStyle(Design.main.opacity(configuration.isPressed ? 0.7 : 1))
             .padding(.horizontal, 20).padding(.vertical, 13)
-            .background(Design.panel2, in: RoundedRectangle(cornerRadius: 11))
+            .background(Design.panel, in: Capsule())
+            .overlay(Capsule().stroke(Design.stroke, lineWidth: 1))
+    }
+}
+
+
+private struct SpeechTrend: View {
+    let values: [Double]
+
+    var body: some View {
+        GeometryReader { proxy in
+            if values.count < 2 {
+                Path { path in
+                    path.move(to: CGPoint(x: 0, y: proxy.size.height / 2))
+                    path.addLine(to: CGPoint(x: proxy.size.width, y: proxy.size.height / 2))
+                }
+                .stroke(Color.black.opacity(0.12), style: StrokeStyle(lineWidth: 2, dash: [4, 6]))
+            } else {
+                Path { path in
+                    let low = values.min() ?? 0
+                    let high = values.max() ?? 1
+                    let scale = max(0.5, high - low)
+                    let w = proxy.size.width
+                    let h = proxy.size.height
+                    for (index, value) in values.enumerated() {
+                        let x = w * CGFloat(index) / CGFloat(values.count - 1)
+                        let y = h * (0.85 - CGFloat((value - low) / scale) * 0.70)
+                        if index == 0 { path.move(to: CGPoint(x: x, y: y)) }
+                        else { path.addLine(to: CGPoint(x: x, y: y)) }
+                    }
+                }
+                .stroke(Color.black.opacity(0.85),
+                        style: StrokeStyle(lineWidth: 2.3, lineCap: .round, lineJoin: .round))
+            }
+        }
     }
 }
