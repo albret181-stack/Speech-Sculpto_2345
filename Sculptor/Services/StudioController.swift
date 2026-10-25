@@ -197,52 +197,113 @@ final class StudioController: ObservableObject {
         }
     }
 
+    /// Independent analysis stages: failure in the acoustic engine must not
+    /// discard a valid transcription. This also identifies the failing stage.
     func analyze(_ id: UUID, allowAppleCloud: Bool) async {
         guard !isRecording, processingID == nil,
               let session = sessions.first(where: { $0.id == id }) else { return }
         processingID = id
         defer { processingID = nil }
+
         let original = store.audioURL(session)
+        AnalysisDiagnostics.event(sessionID: id, stage: "started", info: "ext=\(original.pathExtension.lowercased())")
         var prepared: URL?
+        var acoustic: AcousticValues?
+        var speech: TranscriptOutput?
+        var warnings: [String] = []
+        var failures: [String] = []
+
         do {
-            // Normalize even existing recordings so AAC, stereo and non-standard
-            // input sample rates do not reach AVAudioFile directly.
-            let normalized = try await AudioPreparation.makeAnalysisCopy(from: original)
-            prepared = normalized
-            defer { try? FileManager.default.removeItem(at: normalized) }
-            let acoustic = try await Task.detached(priority: .userInitiated) {
-                try AudioAnalyzer.inspect(normalized)
-            }.value
-
-            var transcript = ""
-            var segments: [SpeechSegment] = []
-            var warning: String?
-            do {
-                let speech = try await SpeechToText.recognize(
-                    url: normalized, allowAppleCloud: allowAppleCloud
-                )
-                transcript = speech.text
-                segments = speech.segments
-            } catch { warning = error.localizedDescription }
-
-            var report = Scoring.makeReport(
-                text: transcript, segments: segments,
-                duration: session.duration, acoustic: acoustic
-            )
-            if let warning {
-                report.caveats.insert("Расшифровка недоступна: \(warning). Текстовые метрики не рассчитаны.", at: 0)
-            }
-            if let idx = sessions.firstIndex(where: { $0.id == id }) {
-                sessions[idx].report = report
-                try store.save(sessions)
-            }
-            if let warning, !batchActive { message = warning }
+            prepared = try await AudioPreparation.makeAnalysisCopy(from: original)
+            AnalysisDiagnostics.event(sessionID: id, stage: "decode", info: "ok")
         } catch {
-            if !batchActive {
-                message = "Не удалось подготовить аудио: \(error.localizedDescription). Исходная запись сохранена."
+            failures.append("преобразование аудио")
+            AnalysisDiagnostics.error(sessionID: id, stage: "decode", error: error)
+            warnings.append("Не удалось преобразовать аудио; пробуем распознать оригинал.")
+        }
+
+        // Acoustic calculations are optional; they cannot prevent transcription.
+        let acousticURL = prepared ?? original
+        do {
+            acoustic = try await Task.detached(priority: .userInitiated) {
+                try AudioAnalyzer.inspect(acousticURL)
+            }.value
+            AnalysisDiagnostics.event(sessionID: id, stage: "acoustics", info: "ok")
+        } catch {
+            failures.append("измерение голоса")
+            AnalysisDiagnostics.error(sessionID: id, stage: "acoustics", error: error)
+            warnings.append("Акустические показатели недоступны: \(AnalysisDiagnostics.short(error)).")
+        }
+
+        // Speech recognition may work with the original M4A even when decoding
+        // into CAF fails, so it is attempted independently.
+        do {
+            speech = try await SpeechToText.recognize(
+                url: prepared ?? original,
+                allowAppleCloud: allowAppleCloud
+            )
+            AnalysisDiagnostics.event(sessionID: id, stage: "recognition", info: "ok")
+        } catch {
+            failures.append("распознавание речи")
+            AnalysisDiagnostics.error(sessionID: id, stage: "recognition", error: error)
+            warnings.append("Не удалось распознать речь: \(AnalysisDiagnostics.short(error)).")
+            if prepared != nil {
+                // Second chance on the original recording, not another import.
+                do {
+                    speech = try await SpeechToText.recognize(
+                        url: original, allowAppleCloud: allowAppleCloud
+                    )
+                    AnalysisDiagnostics.event(sessionID: id, stage: "recognition-original", info: "ok")
+                    warnings.removeLast()
+                } catch {
+                    AnalysisDiagnostics.error(sessionID: id, stage: "recognition-original", error: error)
+                }
             }
         }
+
         if let prepared { try? FileManager.default.removeItem(at: prepared) }
+
+        guard acoustic != nil || speech != nil else {
+            let detail = failures.joined(separator: ", ")
+            AnalysisDiagnostics.event(sessionID: id, stage: "result", info: "failed (\(detail))")
+            if !batchActive {
+                message = "Не удалось обработать запись (этапы: \(detail)). Открой «Настройки → Журнал ошибок» — там есть точные коды. Исходный файл сохранён."
+            }
+            return
+        }
+
+        var report = Scoring.makeReport(
+            text: speech?.text ?? "",
+            segments: speech?.segments ?? [],
+            duration: session.duration,
+            acoustic: acoustic ?? AcousticValues()
+        )
+        if acoustic == nil {
+            report.caveats.insert("Акустические метрики и оценка интонации недоступны. Их нулевые значения не являются измерениями.", at: 0)
+        }
+        if speech == nil {
+            report.caveats.insert("Текстовые показатели не рассчитаны: распознавание речи не удалось.", at: 0)
+        }
+        report.caveats.insert(contentsOf: warnings, at: 0)
+
+        do {
+            let index = sessions.firstIndex(where: { $0.id == id })
+            guard let index else { return }
+            // Save first and then update state to prevent phantom reports.
+            var updated = sessions
+            updated[index].report = report
+            try store.save(updated)
+            sessions = updated
+            AnalysisDiagnostics.event(sessionID: id, stage: "storage", info: "ok")
+            if !warnings.isEmpty && !batchActive {
+                message = "Анализ частично выполнен. \(warnings.joined(separator: " ")) Подробнее: «Настройки → Журнал ошибок»."
+            }
+        } catch {
+            AnalysisDiagnostics.error(sessionID: id, stage: "storage", error: error)
+            if !batchActive {
+                message = "Анализ выполнен, но отчёт не сохранён. Код ошибки доступен в «Настройки → Журнал ошибок»."
+            }
+        }
     }
 
     func saveAI(_ id: UUID, value: String) {
@@ -275,4 +336,5 @@ final class StudioController: ObservableObject {
         NSWorkspace.shared.activateFileViewerSelecting([store.audioURL(item)])
     }
     func showFolder() { NSWorkspace.shared.open(store.root) }
+    func showDiagnostics() { NSWorkspace.shared.activateFileViewerSelecting([AnalysisDiagnostics.logURL]) }
 }
