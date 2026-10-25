@@ -19,6 +19,10 @@ jobs:
       - name: Regression-test imported audio formats
         shell: bash
         run: bash scripts/test_audio_pipeline.sh
+      - name: Check contextual speech scoring
+        run: |
+          swiftc -o /tmp/sculptor-context Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/ContextRegression.swift
+          /tmp/sculptor-context
       - name: Build Apple Silicon and Intel
         shell: bash
         run: |

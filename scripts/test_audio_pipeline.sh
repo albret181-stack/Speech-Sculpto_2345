@@ -23,6 +23,7 @@ for path in build/audio-fixtures/*.wav; do
 done
 swiftc -O -o build/audio-regression \
     Sculptor/Models/AnalysisCore.swift \
+    Sculptor/Models/SpeechContext.swift \
     Sculptor/Services/AudioPreparation.swift \
     Sculptor/Services/AudioAnalyzer.swift \
     Tests/AudioPipelineRegression.swift
