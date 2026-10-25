@@ -501,6 +501,30 @@ struct StudioView: View {
             }
             sectionTitle("ОСНОВНЫЕ ЗАМЕЧАНИЯ")
             if !report.fillerBreakdown.isEmpty { fillerSuggestions(report: report) }
+            if !report.transcript.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("Примеры из твоей записи").font(.system(size: 17, weight: .semibold)).foregroundStyle(Design.main)
+                    Text("Алгоритм различает вероятные речевые заполнители и выражения, которые могут быть уместными.")
+                        .font(.system(size: 12)).foregroundStyle(Design.subtle)
+                    ForEach(Array(SpeechContext.analyze(report.transcript, segments: report.segments).prefix(10).enumerated()), id: \.offset) { _, cue in
+                        HStack(alignment: .top, spacing: 12) {
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text("«\(cue.phrase)» · \(cue.interpretation == .possibleFiller ? "Проверить" : "Возможно, уместно")")
+                                    .font(.system(size: 12, weight: .semibold)).foregroundStyle(Design.main)
+                                Text(cue.excerpt).font(.system(size: 12)).foregroundStyle(Design.main).textSelection(.enabled)
+                                Text(cue.explanation).font(.system(size: 11)).foregroundStyle(Design.subtle)
+                            }
+                            Spacer(minLength: 0)
+                            if let time = cue.timestamp {
+                                Button { play(session, from: time) } label: {
+                                    Label(timeString(time), systemImage: "play.circle")
+                                }.buttonStyle(.plain).foregroundStyle(Design.acid)
+                            }
+                        }
+                        .padding(12).background(Design.panel2, in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }.padding(19).background(Design.panel, in: RoundedRectangle(cornerRadius: 15))
+            }
             ForEach(report.issues) { issue in
                 VStack(alignment: .leading, spacing: 11) {
                     HStack {
