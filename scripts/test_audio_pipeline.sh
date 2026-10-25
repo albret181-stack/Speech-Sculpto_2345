@@ -14,11 +14,12 @@ for rate,channels in ((16000,1),(44100,2),(48000,2)):
             buf.extend(struct.pack("<h",sample)*channels)
         w.writeframes(buf)
 PY
+if ! command -v ffmpeg >/dev/null 2>&1; then brew install ffmpeg; fi
 for path in build/audio-fixtures/*.wav; do
   base="${path%.wav}"
-  afconvert -f caff -d 'LEI16@22050' "$path" "${base}.caf"
-  afconvert -f AIFF -d 'BEI16@44100' "$path" "${base}.aiff"
-  afconvert -f m4af -d aac -b 128000 "$path" "${base}.m4a"
+  ffmpeg -nostdin -hide_banner -loglevel error -y -i "$path" -ac 1 -ar 22050 -c:a pcm_s16le "${base}.caf"
+  ffmpeg -nostdin -hide_banner -loglevel error -y -i "$path" -ac 1 -ar 44100 -c:a pcm_s16be "${base}.aiff"
+  ffmpeg -nostdin -hide_banner -loglevel error -y -i "$path" -ac 1 -ar 44100 -c:a aac -b:a 128k "${base}.m4a"
 done
 swiftc -O -o build/audio-regression \
     Sculptor/Models/AnalysisCore.swift \
