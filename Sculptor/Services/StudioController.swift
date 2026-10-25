@@ -202,20 +202,33 @@ final class StudioController: ObservableObject {
               let session = sessions.first(where: { $0.id == id }) else { return }
         processingID = id
         defer { processingID = nil }
-        let url = store.audioURL(session)
+        let original = store.audioURL(session)
+        var prepared: URL?
         do {
+            // Normalize even existing recordings so AAC, stereo and non-standard
+            // input sample rates do not reach AVAudioFile directly.
+            let normalized = try await AudioPreparation.makeAnalysisCopy(from: original)
+            prepared = normalized
+            defer { try? FileManager.default.removeItem(at: normalized) }
             let acoustic = try await Task.detached(priority: .userInitiated) {
-                try AudioAnalyzer.inspect(url)
+                try AudioAnalyzer.inspect(normalized)
             }.value
-            var text = ""
-            var words: [SpeechSegment] = []
+
+            var transcript = ""
+            var segments: [SpeechSegment] = []
             var warning: String?
             do {
-                let transcript = try await SpeechToText.recognize(url: url, allowAppleCloud: allowAppleCloud)
-                text = transcript.text
-                words = transcript.segments
+                let speech = try await SpeechToText.recognize(
+                    url: normalized, allowAppleCloud: allowAppleCloud
+                )
+                transcript = speech.text
+                segments = speech.segments
             } catch { warning = error.localizedDescription }
-            var report = Scoring.makeReport(text: text, segments: words, duration: session.duration, acoustic: acoustic)
+
+            var report = Scoring.makeReport(
+                text: transcript, segments: segments,
+                duration: session.duration, acoustic: acoustic
+            )
             if let warning {
                 report.caveats.insert("Расшифровка недоступна: \(warning). Текстовые метрики не рассчитаны.", at: 0)
             }
@@ -224,7 +237,12 @@ final class StudioController: ObservableObject {
                 try store.save(sessions)
             }
             if let warning, !batchActive { message = warning }
-        } catch { if !batchActive { message = "Не удалось обработать аудио: \(error.localizedDescription)" } }
+        } catch {
+            if !batchActive {
+                message = "Не удалось подготовить аудио: \(error.localizedDescription). Исходная запись сохранена."
+            }
+        }
+        if let prepared { try? FileManager.default.removeItem(at: prepared) }
     }
 
     func saveAI(_ id: UUID, value: String) {
