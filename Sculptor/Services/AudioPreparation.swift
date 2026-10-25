@@ -40,7 +40,7 @@ enum AudioPreparation {
         else { throw Failure.emptyFile }
 
         let target = fm.temporaryDirectory.appendingPathComponent(
-            "SpeechSculptor-\(UUID().uuidString).wav"
+            "SpeechSculptor-\(UUID().uuidString).caf"
         )
         do {
             try await Task.detached(priority: .userInitiated) {
@@ -59,7 +59,7 @@ enum AudioPreparation {
         guard let input else { throw Failure.fileSystem("не создан объект чтения") }
         defer { ExtAudioFileDispose(input) }
 
-        // Use float32 client buffers and write a standard 16-bit mono PCM WAV, which AVAudioFile reads reliably.
+        // Decode with ExtAudioFile and write float32 PCM using AVAudioFile to guarantee readable file structure.
         var pcm = AudioStreamBasicDescription(
             mSampleRate: 16_000,
             mFormatID: kAudioFormatLinearPCM,
@@ -80,58 +80,39 @@ enum AudioPreparation {
             "настройка декодера и преобразования в моно 16 кГц"
         )
 
-        var fileFormat = AudioStreamBasicDescription(
-            mSampleRate: 16_000,
-            mFormatID: kAudioFormatLinearPCM,
-            mFormatFlags: kAudioFormatFlagIsSignedInteger | kAudioFormatFlagIsPacked,
-            mBytesPerPacket: 2,
-            mFramesPerPacket: 1,
-            mBytesPerFrame: 2,
-            mChannelsPerFrame: 1,
-            mBitsPerChannel: 16,
-            mReserved: 0
-        )
-        var output: ExtAudioFileRef?
-        try checked(
-            ExtAudioFileCreateWithURL(
-                target as CFURL, kAudioFileWAVEType, &fileFormat, nil,
-                AudioFileFlags.eraseFile.rawValue, &output
-            ),
-            "создание временного WAV"
-        )
-        guard let output else { throw Failure.fileSystem("не создан выходной WAV") }
-        defer { ExtAudioFileDispose(output) }
-
-        // Explicitly set the writer's client format to match the input buffers.
-        try checked(
-            ExtAudioFileSetProperty(
-                output, kExtAudioFileProperty_ClientDataFormat,
-                UInt32(MemoryLayout<AudioStreamBasicDescription>.size), &pcm
-            ),
-            "настройка записи PCM"
-        )
+        let format = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                   sampleRate: 16_000, channels: 1, interleaved: false)!
+        let writer = try AVAudioFile(forWriting: target, settings: format.settings,
+                                     commonFormat: .pcmFormatFloat32, interleaved: false)
 
         let frameCount = 8192
         var samples = [Float](repeating: 0, count: frameCount)
         var totalFrames: Int64 = 0
+        guard let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(frameCount)),
+              let floatData = buffer.floatChannelData else {
+            throw Failure.fileSystem("не удалось создать буфер звука")
+        }
         while true {
             var frames = UInt32(frameCount)
-            try samples.withUnsafeMutableBufferPointer { buffer in
+            try samples.withUnsafeMutableBufferPointer { values in
                 var list = AudioBufferList(
                     mNumberBuffers: 1,
                     mBuffers: AudioBuffer(
                         mNumberChannels: 1,
                         mDataByteSize: UInt32(frameCount * MemoryLayout<Float>.size),
-                        mData: buffer.baseAddress
+                        mData: values.baseAddress
                     )
                 )
                 try checked(ExtAudioFileRead(input, &frames, &list), "чтение звуковых сэмплов")
-                if frames > 0 {
-                    list.mBuffers.mDataByteSize = frames * UInt32(MemoryLayout<Float>.size)
-                    try checked(ExtAudioFileWrite(output, frames, &list), "запись подготовленного звука")
-                }
             }
             if frames == 0 { break }
+            buffer.frameLength = AVAudioFrameCount(frames)
+            samples.withUnsafeBufferPointer { data in
+                if let pointer = data.baseAddress {
+                    floatData[0].update(from: pointer, count: Int(frames))
+                }
+            }
+            try writer.write(from: buffer)
             totalFrames += Int64(frames)
         }
         guard totalFrames > 0 else { throw Failure.emptyDecodedFile }
