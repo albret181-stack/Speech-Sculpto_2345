@@ -51,7 +51,10 @@ enum AudioAnalyzer {
         let dbs = rms.map { 20 * log10(max($0, 0.0000001)) }
         let sorted = dbs.sorted()
         let floorDB = sorted[min(sorted.count - 1, Int(Double(sorted.count) * 0.20))]
-        let threshold = max(-42.0, floorDB + 9)
+        // A dynamic noise floor needs a margin. On a nearly constant signal,
+        // a floor +9 dB threshold wrongly labels every frame as silence.
+        let peakDB = sorted.last ?? floorDB
+        let threshold = max(-42.0, floorDB + (peakDB - floorDB >= 12 ? 9.0 : -3.0))
         let voiced = dbs.map { $0 > threshold }
         var speechBlocks = 0
         var pauseBlocks = 0
