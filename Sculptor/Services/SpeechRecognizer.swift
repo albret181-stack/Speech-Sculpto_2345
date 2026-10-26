@@ -33,26 +33,22 @@ enum SpeechToText {
         // Apple's recognizer can impose short-task limits. Slice long audio into
         // approximately 45-second PCM chunks, but retain timestamps in the original file.
         let audio = try AVAudioFile(forReading: url)
-        let chunkFrames = max(1, AVAudioFramePosition(audio.processingFormat.sampleRate * 45))
+        let chunkFrames = max(1, AVAudioFramePosition(audio.processingFormat.sampleRate * 30))
         if audio.length <= chunkFrames { return try await recognizeSingle(url: url, using: recognizer) }
         var fullText: [String] = []
         var words: [SpeechSegment] = []
         var position: AVAudioFramePosition = 0
         while position < audio.length {
             let count = min(chunkFrames, audio.length - position)
-            let destination = FileManager.default.temporaryDirectory.appendingPathComponent("speechsculptor-\(UUID().uuidString).caf")
-            defer { try? FileManager.default.removeItem(at: destination) }
-            let writer = try AVAudioFile(forWriting: destination, settings: audio.processingFormat.settings)
-            var remaining = count
-            while remaining > 0 {
-                let amount = AVAudioFrameCount(min(Int64(8192), remaining))
-                guard let block = AVAudioPCMBuffer(pcmFormat: audio.processingFormat, frameCapacity: amount) else { throw TranscriptError.emptyTranscript }
-                try audio.read(into: block, frameCount: amount)
-                guard block.frameLength > 0 else { break }
-                try writer.write(from: block)
-                remaining -= AVAudioFramePosition(block.frameLength)
+            let destination = try SpeechAudioChunks.makeChunk(from: audio, at: position, frameCount: count)
+            let chunk: TranscriptOutput
+            do {
+                chunk = try await recognizeSingle(url: destination, using: recognizer)
+            } catch {
+                try? FileManager.default.removeItem(at: destination)
+                throw error
             }
-            let chunk = try await recognizeSingle(url: destination, using: recognizer)
+            try? FileManager.default.removeItem(at: destination)
             fullText.append(chunk.text)
             let offset = Double(position) / audio.processingFormat.sampleRate
             words.append(contentsOf: chunk.segments.map { SpeechSegment(word: $0.word, start: $0.start + offset, duration: $0.duration) })
