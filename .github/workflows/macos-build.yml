@@ -31,6 +31,11 @@ jobs:
         run: |
           swiftc -o /tmp/sculptor-benchmark Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/FillerBenchmark.swift
           /tmp/sculptor-benchmark
+      - name: Acoustic signal regression
+        run: |
+          python3 scripts/generate_acoustic_fixtures.py
+          swiftc -o /tmp/sculptor-acoustic Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Services/AudioAnalyzer.swift Tests/AcousticQuality.swift
+          /tmp/sculptor-acoustic
       - name: Build Apple Silicon and Intel
         shell: bash
         run: |
