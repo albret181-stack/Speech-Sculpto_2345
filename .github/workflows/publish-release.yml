@@ -22,6 +22,19 @@ jobs:
         run: |
           swiftc -o /tmp/sculptor-context Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/ContextRegression.swift
           /tmp/sculptor-context
+      - name: "Quality audit before publishing"
+        run: |
+          swiftc -o /tmp/sculptor-quality Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Models/CoachEngine.swift Tests/QualityAudit.swift
+          /tmp/sculptor-quality
+      - name: "Russian filler benchmark before publishing"
+        run: |
+          swiftc -o /tmp/sculptor-benchmark Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/FillerBenchmark.swift
+          /tmp/sculptor-benchmark
+      - name: "Acoustic signal regression before publishing"
+        run: |
+          python3 scripts/generate_acoustic_fixtures.py
+          swiftc -o /tmp/sculptor-acoustic Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Services/AudioAnalyzer.swift Tests/AcousticQuality.swift
+          /tmp/sculptor-acoustic
       - name: Build macOS universal application
         shell: bash
         run: |
