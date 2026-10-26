@@ -35,6 +35,10 @@ jobs:
           python3 scripts/generate_acoustic_fixtures.py
           swiftc -o /tmp/sculptor-acoustic Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Services/AudioAnalyzer.swift Tests/AcousticQuality.swift
           /tmp/sculptor-acoustic
+      - name: "Personal progress regression before publishing"
+        run: |
+          swiftc -o /tmp/sculptor-progress Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Models/ProgressAnalytics.swift Tests/ProgressRegression.swift
+          /tmp/sculptor-progress
       - name: Build macOS universal application
         shell: bash
         run: |

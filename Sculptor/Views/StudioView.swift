@@ -33,6 +33,7 @@ private enum StudioPage: String, CaseIterable {
     case training = "Практика"
     case history = "История"
     case vocabulary = "Словарь"
+    case progress = "Прогресс"
     var symbol: String {
         switch self {
         case .home: "square.grid.2x2"
@@ -40,6 +41,7 @@ private enum StudioPage: String, CaseIterable {
         case .training: "sparkle.magnifyingglass"
         case .history: "clock.arrow.circlepath"
         case .vocabulary: "character.book.closed"
+        case .progress: "chart.xyaxis.line"
         }
     }
 }
@@ -59,6 +61,8 @@ struct StudioView: View {
     @State private var toDelete: UUID?
     @State private var player: AVAudioPlayer?
     @State private var activeLessonID: String?
+    @State private var progressDays = 30
+    @AppStorage("progressGoalFillersPer100") private var progressGoalFillersPer100 = 3.0
 
     private var report: SpeechReport? { studio.selected?.report ?? studio.latestReport }
 
@@ -74,6 +78,7 @@ struct StudioView: View {
                     case .training: training
                     case .history: history
                     case .vocabulary: VocabularyStudio().environmentObject(vocabulary)
+                    case .progress: progressDashboard
                     }
                 }
                 .padding(.horizontal, 30)
@@ -747,6 +752,83 @@ struct StudioView: View {
                 .font(.system(size: 11)).foregroundStyle(Design.subtle)
             if let error = coaching.message {
                 Text(error).foregroundStyle(.red).font(.caption)
+            }
+        }
+    }
+
+    private var progressDashboard: some View {
+        let p = ProgressAnalytics.window(studio.sessions, days: progressDays)
+        let daily = ProgressAnalytics.daily(studio.sessions, days: progressDays)
+        let values = daily.compactMap { $0 }
+        return VStack(alignment: .leading, spacing: 22) {
+            HStack {
+                VStack(alignment: .leading, spacing: 7) {
+                    sectionTitle("РАЗВИТИЕ РЕЧИ / ЛИЧНАЯ СТАТИСТИКА")
+                    Text("Мой прогресс")
+                        .font(.system(size: 39, weight: .semibold, design: .rounded)).foregroundStyle(Design.main)
+                    Text("Отслеживай динамику, а не только количество записей.")
+                        .font(.system(size: 13)).foregroundStyle(Design.subtle)
+                }
+                Spacer()
+                Picker("Период", selection: $progressDays) {
+                    Text("7 дней").tag(7)
+                    Text("30 дней").tag(30)
+                }.pickerStyle(.segmented).frame(width: 220)
+            }
+            HStack(spacing: 12) {
+                stat("ЗАПИСЕЙ", value: "\(p.recordings)", symbol: "mic")
+                stat("ПРОАНАЛИЗИРОВАНО", value: "\(p.analyzed)", symbol: "checkmark.circle")
+                stat("УРОКОВ", value: "\(p.lessons)", symbol: "graduationcap")
+                stat("АКТИВНЫХ ДНЕЙ", value: "\(p.activeDays)", symbol: "calendar")
+            }
+            HStack(alignment: .top, spacing: 16) {
+                VStack(alignment: .leading, spacing: 15) {
+                    sectionTitle("ПОВТОРЫ / НА 100 СЛОВ")
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(p.fillersPer100.map { String(format: "%.1f", $0) } ?? "—")
+                            .font(.system(size: 46, weight: .semibold)).foregroundStyle(Design.main)
+                        Text("потенциальных заполнителей на 100 слов")
+                            .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                    }
+                    if values.count >= 2 {
+                        SpeechTrend(values: values).frame(height: 130)
+                        Text("Линия показывает только дни с пригодной расшифровкой; пропущенные дни не равны нулю.")
+                            .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                    } else {
+                        emptyHint("Пока недостаточно данных", "Нужны хотя бы два дня с пригодными результатами.")
+                    }
+                    Rectangle().fill(Design.stroke).frame(height: 1)
+                    Text(p.change.map { String(format: "Изменение: %+.1f п.п.", $0) } ?? "Изменение пока не рассчитывается")
+                        .font(.system(size: 14, weight: .semibold)).foregroundStyle(Design.main)
+                    Text(p.comparisonNote).font(.system(size: 11)).foregroundStyle(Design.subtle)
+                }
+                .padding(22).frame(maxWidth: .infinity, alignment: .topLeading)
+                .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
+                VStack(alignment: .leading, spacing: 15) {
+                    sectionTitle("ЛИЧНАЯ ЦЕЛЬ")
+                    Text("Частота заполнителей").font(.system(size: 19, weight: .semibold)).foregroundStyle(Design.main)
+                    Text("Выбери ориентир, а не универсальную норму.")
+                        .font(.system(size: 12)).foregroundStyle(Design.subtle)
+                    HStack {
+                        Text("Цель").foregroundStyle(Design.main)
+                        Spacer()
+                        Text(String(format: "%.1f на 100 слов", progressGoalFillersPer100))
+                            .foregroundStyle(Design.main).monospacedDigit()
+                    }.font(.system(size: 12))
+                    Slider(value: $progressGoalFillersPer100, in: 0...10, step: 0.5)
+                        .tint(Design.acid)
+                    if let rate = p.fillersPer100 {
+                        Text(rate <= progressGoalFillersPer100 ? "По этому периоду ориентир достигнут." : "Пока выше выбранного ориентира.")
+                            .font(.system(size: 12)).foregroundStyle(Design.main)
+                    } else {
+                        Text("Нет достаточных данных для сравнения с целью.")
+                            .font(.system(size: 12)).foregroundStyle(Design.subtle)
+                    }
+                    Text("Цель сохраняется на этом Mac. Результат не учитывает точность распознавания и смысловую уместность всех выражений.")
+                        .font(.system(size: 11)).foregroundStyle(Design.subtle)
+                }
+                .padding(22).frame(width: 290, alignment: .topLeading)
+                .background(Design.panel, in: RoundedRectangle(cornerRadius: 16))
             }
         }
     }

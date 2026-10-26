@@ -63,7 +63,7 @@ struct StudioSettings: View {
                 Button("Журнал ошибок") { studio.showDiagnostics() }
                 Button("Показать локальные записи") { studio.showFolder() }
                 Spacer()
-                Text("v0.9.1 · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
+                Text("v" + (Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—") + " · macOS 14.2+").font(.system(size: 11)).foregroundStyle(.secondary)
             }
         }
         .padding(28).frame(width: 575)
