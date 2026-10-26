@@ -27,6 +27,10 @@ jobs:
         run: |
           swiftc -o /tmp/sculptor-quality Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Sculptor/Models/CoachEngine.swift Tests/QualityAudit.swift
           /tmp/sculptor-quality
+      - name: Russian filler benchmark
+        run: |
+          swiftc -o /tmp/sculptor-benchmark Sculptor/Models/AnalysisCore.swift Sculptor/Models/SpeechContext.swift Tests/FillerBenchmark.swift
+          /tmp/sculptor-benchmark
       - name: Build Apple Silicon and Intel
         shell: bash
         run: |
