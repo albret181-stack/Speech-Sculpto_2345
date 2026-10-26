@@ -28,3 +28,10 @@ swiftc -O -o build/audio-regression \
     Sculptor/Services/AudioAnalyzer.swift \
     Tests/AudioPipelineRegression.swift
 build/audio-regression build/audio-fixtures/*.wav build/audio-fixtures/*.caf build/audio-fixtures/*.aiff build/audio-fixtures/*.m4a
+
+# Exercise long 48 kHz stereo AAC resembling the user's recordings (without user audio).
+for seconds in 150 870; do
+  ffmpeg -nostdin -hide_banner -loglevel error -y -f lavfi -i "sine=frequency=180:sample_rate=48000:duration=${seconds}" -ac 2 -c:a aac -b:a 128k "build/audio-fixtures/long-${seconds}.m4a"
+done
+swiftc -O -o build/long-audio-regression Sculptor/Services/SpeechAudioChunks.swift Tests/LongAudioRegression.swift
+build/long-audio-regression build/audio-fixtures/long-150.m4a build/audio-fixtures/long-870.m4a
